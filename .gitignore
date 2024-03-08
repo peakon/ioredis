@@ -2,7 +2,7 @@ node_modules
 *.cpuprofile
 /test.*
 /.idea
-built
+# built
 
 .nyc_output
 coverage
