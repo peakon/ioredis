@@ -5,8 +5,8 @@
 #####################
 # CHANGE LOG
 #####################
-# (re)adding code analysis service webhook: seeking approval on pr [placeholder]
-# (re)adding code analysis service ac svc-secapi-appsec: seeking approval on pr [placeholder1]
+# (re)adding code analysis service webhook: seeking approval on pr [https://api.github.com/repos/peakon/ioredis/pulls/3]
+# (re)adding code analysis service ac svc-secapi-appsec: seeking approval on pr [https://api.github.com/repos/peakon/ioredis/pulls/3]
 
 #####################
 # SLACK CONFIGURATION
