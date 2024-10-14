@@ -686,6 +686,7 @@ class Cluster extends Commander_1.default {
                         port: items[j][1],
                     });
                     node.readOnly = j !== 2;
+                    node.nodeId = items[j][2];
                     nodes.push(node);
                     keys.push(node.host + ":" + node.port);
                 }

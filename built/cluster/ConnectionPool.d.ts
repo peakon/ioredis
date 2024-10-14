@@ -28,5 +28,6 @@ export default class ConnectionPool extends EventEmitter {
      * Remove a node from the pool.
      */
     private removeNode;
+    private getNodeKey;
 }
 export {};

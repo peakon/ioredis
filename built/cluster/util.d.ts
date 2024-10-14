@@ -7,6 +7,7 @@ export interface RedisOptions {
     host: string;
     username?: string;
     password?: string;
+    nodeId?: string;
     [key: string]: any;
 }
 export interface SrvRecordsGroup {

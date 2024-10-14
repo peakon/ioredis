@@ -34,7 +34,7 @@ class ConnectionPool extends events_1.EventEmitter {
      * Find or create a connection to the node
      */
     findOrCreate(redisOptions, readOnly = false) {
-        const key = (0, util_1.getNodeKey)(redisOptions);
+        const key = this.getNodeKey(redisOptions);
         readOnly = Boolean(readOnly);
         if (this.specifiedOptions[key]) {
             Object.assign(redisOptions, this.specifiedOptions[key]);
@@ -95,7 +95,7 @@ class ConnectionPool extends events_1.EventEmitter {
         debug("Reset with %O", nodes);
         const newNodes = {};
         nodes.forEach((node) => {
-            const key = (0, util_1.getNodeKey)(node);
+            const key = this.getNodeKey(node);
             // Don't override the existing (master) node
             // when the current one is slave.
             if (!(node.readOnly && newNodes[key])) {
@@ -132,6 +132,9 @@ class ConnectionPool extends events_1.EventEmitter {
                 this.emit("drain");
             }
         }
+    }
+    getNodeKey(options) {
+        return (0, util_1.getNodeKey)(options) + ":" + options.nodeId;
     }
 }
 exports.default = ConnectionPool;
