@@ -46,7 +46,7 @@ export default class ConnectionPool extends EventEmitter {
    * Find or create a connection to the node
    */
   findOrCreate(redisOptions: RedisOptions, readOnly = false): NodeRecord {
-    const key = getNodeKey(redisOptions);
+    const key = this.getNodeKey(redisOptions);
     readOnly = Boolean(readOnly);
 
     if (this.specifiedOptions[key]) {
@@ -119,7 +119,7 @@ export default class ConnectionPool extends EventEmitter {
     debug("Reset with %O", nodes);
     const newNodes = {};
     nodes.forEach((node) => {
-      const key = getNodeKey(node);
+      const key = this.getNodeKey(node);
 
       // Don't override the existing (master) node
       // when the current one is slave.
@@ -160,5 +160,9 @@ export default class ConnectionPool extends EventEmitter {
         this.emit("drain");
       }
     }
+  }
+
+  private getNodeKey(options: RedisOptions) {
+    return getNodeKey(options) + ":" + options.nodeId;
   }
 }
