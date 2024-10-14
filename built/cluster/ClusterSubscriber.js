@@ -33,6 +33,7 @@ class ClusterSubscriber {
             if (!this.started || !this.subscriber) {
                 return;
             }
+            // @ts-expect-error
             if ((0, util_1.getNodeKey)(this.subscriber.options) === key) {
                 debug("subscriber has left, selecting a new one...");
                 this.selectSubscriber();

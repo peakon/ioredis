@@ -498,7 +498,6 @@ class Redis extends Commander_1.default {
      * @ignore
      */
     handleReconnection(err, item) {
-        var _a;
         let needReconnect = false;
         if (this.options.reconnectOnError) {
             needReconnect = this.options.reconnectOnError(err);
@@ -511,18 +510,32 @@ class Redis extends Commander_1.default {
                 }
                 item.command.reject(err);
                 break;
-            case 2:
-                if (this.status !== "reconnecting") {
-                    this.disconnect(true);
+            case 2: {
+                const resendCommand = () => {
+                    var _a;
+                    if (this.status !== "reconnecting") {
+                        this.disconnect(true);
+                    }
+                    if (((_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== item.select &&
+                        item.command.name !== "select") {
+                        this.select(item.select);
+                    }
+                    // TODO
+                    // @ts-expect-error
+                    this.sendCommand(item.command);
+                };
+                if (typeof this.options.retryStrategy !== "function") {
+                    return resendCommand();
                 }
-                if (((_a = this.condition) === null || _a === void 0 ? void 0 : _a.select) !== item.select &&
-                    item.command.name !== "select") {
-                    this.select(item.select);
+                const retryDelay = this.options.retryStrategy(++this.retryAttempts);
+                if (typeof retryDelay === "number") {
+                    this.reconnectTimeout = setTimeout(() => {
+                        this.reconnectTimeout = null;
+                        resendCommand();
+                    }, retryDelay);
                 }
-                // TODO
-                // @ts-expect-error
-                this.sendCommand(item.command);
                 break;
+            }
             default:
                 item.command.reject(err);
         }
