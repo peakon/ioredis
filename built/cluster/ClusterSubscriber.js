@@ -33,6 +33,7 @@ class ClusterSubscriber {
             if (!this.started || !this.subscriber) {
                 return;
             }
+            // @ts-expect-error
             if ((0, util_1.getNodeKey)(this.subscriber.options) === key) {
                 debug("subscriber has left, selecting a new one...");
                 this.selectSubscriber();
@@ -63,6 +64,7 @@ class ClusterSubscriber {
         debug("stopped");
     }
     selectSubscriber() {
+        var _a, _b;
         const lastActiveSubscriber = this.lastActiveSubscriber;
         // Disconnect the previous subscriber even if there
         // will not be a new one.
@@ -116,13 +118,12 @@ class ClusterSubscriber {
         // Re-subscribe previous channels
         const previousChannels = { subscribe: [], psubscribe: [], ssubscribe: [] };
         if (lastActiveSubscriber) {
-            const condition = lastActiveSubscriber.condition || lastActiveSubscriber.prevCondition;
-            if (condition && condition.subscriber) {
-                previousChannels.subscribe = condition.subscriber.channels("subscribe");
-                previousChannels.psubscribe =
-                    condition.subscriber.channels("psubscribe");
-                previousChannels.ssubscribe =
-                    condition.subscriber.channels("ssubscribe");
+            const subscriber = ((_a = lastActiveSubscriber.condition) === null || _a === void 0 ? void 0 : _a.subscriber) ||
+                ((_b = lastActiveSubscriber.prevCondition) === null || _b === void 0 ? void 0 : _b.subscriber);
+            if (subscriber) {
+                previousChannels.subscribe = subscriber.channels("subscribe");
+                previousChannels.psubscribe = subscriber.channels("psubscribe");
+                previousChannels.ssubscribe = subscriber.channels("ssubscribe");
             }
         }
         if (previousChannels.subscribe.length ||
