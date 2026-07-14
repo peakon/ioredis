@@ -20,7 +20,7 @@ describe("autoPipelining for cluster", () => {
     const slotTable = [
       [0, 5000, ["127.0.0.1", 30001]],
       [5001, 9999, ["127.0.0.1", 30002]],
-      [10000, 16383, ["127.0.0.1", 30003]],
+      [10000, 16383, ["127.0.0.1", 30003], ["127.0.0.1", 30004]],
     ];
 
     new MockServer(30001, (argv) => {
@@ -30,6 +30,10 @@ describe("autoPipelining for cluster", () => {
 
       if (argv[0] === "get" && argv[1] === "foo2") {
         return "bar2";
+      }
+
+      if (argv[0] === "msetex" && argv[1] === "1" && argv[2] === "foo2") {
+        return 1;
       }
 
       if (argv[0] === "get" && argv[1] === "foo6") {
@@ -68,6 +72,10 @@ describe("autoPipelining for cluster", () => {
         return "bar1";
       }
 
+      if (argv[0] === "msetex" && argv[1] === "1" && argv[2] === "foo1") {
+        return 1;
+      }
+
       if (argv[0] === "get" && argv[1] === "foo5") {
         return "bar5";
       }
@@ -78,6 +86,21 @@ describe("autoPipelining for cluster", () => {
 
       if (argv[0] === "evalsha" || argv[0] === "eval") {
         return argv.slice(argv.length - 4);
+      }
+      if (argv[0] === "get" && argv[1] === "replica_read") {
+        return "from-master";
+      }
+    });
+
+    new MockServer(30004, (argv) => {
+      if (argv[0] === "cluster" && argv[1] === "SLOTS") {
+        return slotTable;
+      }
+      if (argv[0] === "readonly") {
+        return "OK";
+      }
+      if (argv[0] === "get" && argv[1] === "replica_read") {
+        return "from-replica";
       }
     });
   });
@@ -123,6 +146,7 @@ describe("autoPipelining for cluster", () => {
 
     promises.push(cluster.subscribe("subscribe").catch(() => {}));
     promises.push(cluster.unsubscribe("subscribe").catch(() => {}));
+    promises.push(cluster.client("help").catch(() => {}));
 
     expect(cluster.autoPipelineQueueSize).to.eql(0);
     await promises;
@@ -181,6 +205,20 @@ describe("autoPipelining for cluster", () => {
         cluster.get("foo1"),
       ])
     ).to.eql(["bar1", "bar5", "bar1", "bar5", "bar1"]);
+
+    cluster.disconnect();
+  });
+
+  it("should bucket MSETEX by its first key", async () => {
+    const cluster = new Cluster(hosts, { enableAutoPipelining: true });
+    await new Promise((resolve) => cluster.once("connect", resolve));
+
+    const result = await Promise.all([
+      cluster.msetex(1, "foo1", "bar1"),
+      cluster.msetex(1, "foo2", "bar2"),
+    ]);
+
+    expect(result).to.eql([1, 1]);
 
     cluster.disconnect();
   });
@@ -365,6 +403,53 @@ describe("autoPipelining for cluster", () => {
 
       expect(cluster.autoPipelineQueueSize).to.eql(2);
     });
+  });
+
+  it("should handle large pipelines without RangeError", async () => {
+    const largeValue = "x".repeat(1024 * 1024);
+    const store = {};
+
+    const slotTable = [
+      [0, 8191, ["127.0.0.1", 30005]],
+      [8192, 16383, ["127.0.0.1", 30006]],
+    ];
+
+    const handler = (argv) => {
+      if (argv[0] === "cluster" && argv[1] === "SLOTS") {
+        return slotTable;
+      }
+
+      if (argv[0] === "set") {
+        store[argv[1]] = argv[2];
+        return "OK";
+      }
+
+      if (argv[0] === "get") {
+        return store[argv[1]] || null;
+      }
+    };
+
+    new MockServer(30005, handler);
+    new MockServer(30006, handler);
+
+    const cluster = new Cluster(
+      [{ host: "127.0.0.1", port: 30005 }, { host: "127.0.0.1", port: 30006 }],
+      { enableAutoPipelining: true }
+    );
+    await new Promise((resolve) => cluster.once("connect", resolve));
+
+    await Promise.all(
+      Array.from({ length: 600 }, (_, i) => cluster.set(`key${i}`, largeValue))
+    );
+
+    const results = await Promise.all(
+      Array.from({ length: 600 }, (_, i) => cluster.get(`key${i}`))
+    );
+
+    expect(results[0]).to.eql(largeValue);
+    expect(results[599]).to.eql(largeValue);
+
+    cluster.disconnect();
   });
 
   it("should handle callbacks failures", (done) => {
@@ -613,6 +698,24 @@ describe("autoPipelining for cluster", () => {
         cluster.get("foo1"),
       ])
     ).to.eql(["bar1", "bar5", "bar1", "bar5", "bar1"]);
+
+    cluster.disconnect();
+  });
+
+  it("should route writes to master and reads to replica with scaleReads", async () => {
+    const cluster = new Cluster(hosts, {
+      enableAutoPipelining: true,
+      scaleReads: "slave",
+    });
+    await new Promise((resolve) => cluster.once("connect", resolve));
+
+    const [setResult, getResult] = await Promise.all([
+      cluster.set("replica_read", "bar"),
+      cluster.get("replica_read"),
+    ]);
+
+    expect(setResult).to.eql("OK");
+    expect(getResult).to.eql("from-replica");
 
     cluster.disconnect();
   });

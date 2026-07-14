@@ -29,6 +29,13 @@ import {
   parseURL,
   resolveTLSProfile,
 } from "./utils";
+import {
+  traceCommand,
+  traceConnect,
+  sanitizeArgs,
+  type CommandTraceContext,
+  type BatchOperationContext,
+} from "./tracing";
 import applyMixin from "./utils/applyMixin";
 import Commander from "./utils/Commander";
 import { defaults, noop } from "./utils/lodash";
@@ -170,10 +177,27 @@ class Redis extends Commander implements DataHandledable {
    * unless `lazyConnect: true` is passed.
    *
    * When calling this method manually, a Promise is returned, which will
-   * be resolved when the connection status is ready.
+   * be resolved when the connection status is ready. The promise can reject
+   * if the connection fails, times out, or if Redis is already connecting/connected.
    */
   connect(callback?: Callback<void>): Promise<void> {
-    const promise = new Promise<void>((resolve, reject) => {
+    const promise = traceConnect(
+      () => this._connect(),
+      () => {
+        const { address, port } = this._getServerAddress();
+        return {
+          serverAddress: address,
+          serverPort: port,
+          connectionEpoch: this.connectionEpoch,
+        };
+      }
+    );
+
+    return asCallback(promise, callback);
+  }
+
+  private _connect(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
       if (
         this.status === "connecting" ||
         this.status === "connect" ||
@@ -298,8 +322,6 @@ class Redis extends Commander implements DataHandledable {
         }
       );
     });
-
-    return asCallback(promise, callback);
   }
 
   /**
@@ -444,12 +466,15 @@ class Redis extends Commander implements DataHandledable {
       command.setTimeout(this.options.commandTimeout);
     }
 
+    const blockingTimeout = this.getBlockingTimeoutInMs(command);
+
     let writable =
       this.status === "ready" ||
       (!stream &&
         this.status === "connect" &&
-        exists(command.name) &&
-        hasFlag(command.name, "loading"));
+        exists(command.name, { caseInsensitive: true }) &&
+        (hasFlag(command.name, "loading", { nameCaseInsensitive: true }) ||
+          Command.checkFlag("HANDSHAKE_COMMANDS", command.name)));
     if (!this.stream) {
       writable = false;
     } else if (!this.stream.writable) {
@@ -493,6 +518,16 @@ class Redis extends Commander implements DataHandledable {
         stream: stream,
         select: this.condition.select,
       });
+
+      // For blocking commands in the offline queue, arm a client-side timeout
+      // only when blockingTimeout is configured. Without this option, queued
+      // blocking commands may wait indefinitely on a dead connection.
+      if (Command.checkFlag("BLOCKING_COMMANDS", command.name)) {
+        const offlineTimeout = this.getConfiguredBlockingTimeout();
+        if (offlineTimeout !== undefined) {
+          command.setBlockingTimeout(offlineTimeout);
+        }
+      }
     } else {
       // @ts-expect-error
       if (debug.enabled) {
@@ -521,11 +556,18 @@ class Redis extends Commander implements DataHandledable {
         select: this.condition.select,
       });
 
+      if (blockingTimeout !== undefined) {
+        command.setBlockingTimeout(blockingTimeout);
+      }
+
       if (Command.checkFlag("WILL_DISCONNECT", command.name)) {
         this.manuallyClosing = true;
       }
 
-      if (this.options.socketTimeout !== undefined && this.socketTimeoutTimer === undefined) {
+      if (
+        this.options.socketTimeout !== undefined &&
+        this.socketTimeoutTimer === undefined
+      ) {
         this.setSocketTimeout();
       }
     }
@@ -539,12 +581,72 @@ class Redis extends Commander implements DataHandledable {
       }
     }
 
-    return command.promise;
+    if (!writable || command.isTraced) {
+      return command.promise;
+    }
+
+    // Trace on the write path only, and only once per command. Commands may
+    // pass through sendCommand multiple times (offline queue flush,
+    // prevCommandQueue resend after reconnect). The isTraced flag ensures
+    // we don't emit duplicate trace events.
+    command.isTraced = true;
+    return traceCommand(
+      () => command.promise as Promise<unknown>,
+      () => this._buildCommandContext(command)
+    );
+  }
+
+  private getBlockingTimeoutInMs(command: Command): number | undefined {
+    if (!Command.checkFlag("BLOCKING_COMMANDS", command.name)) {
+      return undefined;
+    }
+
+    // Feature is opt-in: only enabled when blockingTimeout is set to a positive number
+    const configuredTimeout = this.getConfiguredBlockingTimeout();
+    if (configuredTimeout === undefined) {
+      return undefined;
+    }
+
+    const timeout = command.extractBlockingTimeout();
+    if (typeof timeout === "number") {
+      if (timeout > 0) {
+        // Finite timeout from command args - add grace period
+        return (
+          timeout +
+          (this.options.blockingTimeoutGrace ??
+            DEFAULT_REDIS_OPTIONS.blockingTimeoutGrace)
+        );
+      }
+      // Command has timeout=0 (block forever), use blockingTimeout option as safety net
+      return configuredTimeout;
+    }
+
+    if (timeout === null) {
+      // No BLOCK option found (e.g., XREAD without BLOCK), use blockingTimeout as safety net
+      return configuredTimeout;
+    }
+
+    return undefined;
+  }
+
+  private getConfiguredBlockingTimeout(): number | undefined {
+    if (
+      typeof this.options.blockingTimeout === "number" &&
+      this.options.blockingTimeout > 0
+    ) {
+      return this.options.blockingTimeout;
+    }
+
+    return undefined;
   }
 
   private setSocketTimeout() {
     this.socketTimeoutTimer = setTimeout(() => {
-      this.stream.destroy(new Error(`Socket timeout. Expecting data, but didn't receive any in ${this.options.socketTimeout}ms.`));
+      this.stream.destroy(
+        new Error(
+          `Socket timeout. Expecting data, but didn't receive any in ${this.options.socketTimeout}ms.`
+        )
+      );
       this.socketTimeoutTimer = undefined;
     }, this.options.socketTimeout);
 
@@ -645,7 +747,10 @@ class Redis extends Commander implements DataHandledable {
    */
   handleReconnection(err: Error, item: CommandItem) {
     let needReconnect: ReturnType<ReconnectOnError> = false;
-    if (this.options.reconnectOnError) {
+    if (
+      this.options.reconnectOnError &&
+      !Command.checkFlag("IGNORE_RECONNECT_ON_ERROR", item.command.name)
+    ) {
       needReconnect = this.options.reconnectOnError(err);
     }
 
@@ -674,6 +779,43 @@ class Redis extends Commander implements DataHandledable {
       default:
         item.command.reject(err);
     }
+  }
+
+  /**
+   * @ignore
+   */
+  _getServerAddress(): { address: string; port: number | undefined } {
+    if ("path" in this.options && this.options.path) {
+      return { address: this.options.path, port: undefined };
+    }
+    return {
+      address: ("host" in this.options && this.options.host) || "localhost",
+      port: ("port" in this.options && this.options.port) || 6379,
+    };
+  }
+
+  private _buildCommandContext(
+    command: Command
+  ): CommandTraceContext {
+    const { address, port } = this._getServerAddress();
+    return {
+      command: command.name,
+      args: sanitizeArgs(command.name, command.args),
+      database: this.condition?.select ?? this.options.db ?? 0,
+      serverAddress: address,
+      serverPort: port,
+    };
+  }
+
+  _buildBatchContext(batchSize: number): BatchOperationContext {
+    const { address, port } = this._getServerAddress();
+    return {
+      batchMode: "MULTI",
+      batchSize,
+      database: this.condition?.select ?? this.options.db ?? 0,
+      serverAddress: address,
+      serverPort: port,
+    };
   }
 
   /**

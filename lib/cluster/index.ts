@@ -37,6 +37,7 @@ import {
   weightSrvRecords,
 } from "./util";
 import Deque = require("denque");
+import ClusterSubscriberGroup from "./ClusterSubscriberGroup";
 
 const debug = Debug("cluster");
 
@@ -96,6 +97,7 @@ class Cluster extends Commander {
   private delayQueue: DelayQueue = new DelayQueue();
   private offlineQueue = new Deque<OfflineQueueItem>();
   private subscriber: ClusterSubscriber;
+  private shardedSubscribers: ClusterSubscriberGroup;
   private slotsTimer: NodeJS.Timer;
   private reconnectTimeout: NodeJS.Timer;
   private isRefreshing = false;
@@ -103,6 +105,7 @@ class Cluster extends Commander {
   private _autoPipelines: Map<string, typeof Pipeline> = new Map();
   private _runningAutoPipelines: Set<string> = new Set();
   private _readyDelayedCallbacks: Callback[] = [];
+  private subscriberGroupEmitter: EventEmitter | null;
 
   /**
    * Every time Cluster#connect() is called, this value will be
@@ -115,12 +118,17 @@ class Cluster extends Commander {
   /**
    * Creates an instance of Cluster.
    */
+  //TODO: Add an option that enables or disables sharded PubSub
   constructor(startupNodes: ClusterNode[], options: ClusterOptions = {}) {
     super();
     EventEmitter.call(this);
 
     this.startupNodes = startupNodes;
     this.options = defaults({}, options, DEFAULT_CLUSTER_OPTIONS, this.options);
+
+    if (this.options.shardedSubscribers) {
+      this.createShardedSubscriberGroup();
+    }
 
     if (
       this.options.redisOptions &&
@@ -142,7 +150,10 @@ class Cluster extends Commander {
       );
     }
 
-    this.connectionPool = new ConnectionPool(this.options.redisOptions);
+    this.connectionPool = new ConnectionPool(
+      this.options.redisOptions ?? {},
+      this.options.clusterNodeRetryStrategy
+    );
 
     this.connectionPool.on("-node", (redis, key) => {
       this.emit("-node", redis);
@@ -216,6 +227,15 @@ class Cluster extends Commander {
           }
           this.connectionPool.reset(nodes);
 
+          if (this.options.shardedSubscribers) {
+            this.shardedSubscribers
+              .reset(this.slots, this.connectionPool.getNodes("all"))
+              .catch((err) => {
+                // TODO should we emit an error event here?
+                debug("Error while starting subscribers: %s", err);
+              });
+          }
+
           const readyHandler = () => {
             this.setStatus("ready");
             this.retryAttempts = 0;
@@ -268,6 +288,13 @@ class Cluster extends Commander {
             }
           });
           this.subscriber.start();
+
+          if (this.options.shardedSubscribers) {
+            this.shardedSubscribers.start().catch((err) => {
+              // TODO should we emit an error event here?
+              debug("Error while starting subscribers: %s", err);
+            });
+          }
         })
         .catch((err) => {
           this.setStatus("close");
@@ -296,6 +323,11 @@ class Cluster extends Commander {
     this.clearNodesRefreshInterval();
 
     this.subscriber.stop();
+
+    if (this.options.shardedSubscribers) {
+      this.shardedSubscribers.stop();
+    }
+
     if (status === "wait") {
       this.setStatus("close");
       this.handleCloseEvent();
@@ -320,6 +352,11 @@ class Cluster extends Commander {
     this.clearNodesRefreshInterval();
 
     this.subscriber.stop();
+
+    if (this.options.shardedSubscribers) {
+      this.shardedSubscribers.stop();
+    }
+
 
     if (status === "wait") {
       const ret = asCallback(Promise.resolve<"OK">("OK"), callback);
@@ -547,7 +584,45 @@ class Cluster extends Commander {
           Command.checkFlag("ENTER_SUBSCRIBER_MODE", command.name) ||
           Command.checkFlag("EXIT_SUBSCRIBER_MODE", command.name)
         ) {
-          redis = _this.subscriber.getInstance();
+          if (
+            _this.options.shardedSubscribers &&
+            (command.name == "ssubscribe" || command.name == "sunsubscribe")
+          ) {
+            const sub =
+              _this.shardedSubscribers.getResponsibleSubscriber(targetSlot);
+
+            if (!sub) {
+              command.reject(
+                new AbortError(`No sharded subscriber for slot: ${targetSlot}`)
+              );
+              return;
+            }
+
+            let status = -1;
+
+            if (command.name == "ssubscribe") {
+              status = _this.shardedSubscribers.addChannels(command.getKeys());
+            }
+
+            if (command.name == "sunsubscribe") {
+              status = _this.shardedSubscribers.removeChannels(
+                command.getKeys()
+              );
+            }
+
+            if (status !== -1) {
+              redis = sub.getInstance();
+            } else {
+              command.reject(
+                new AbortError(
+                  "Possible CROSSSLOT error: All channels must hash to the same slot"
+                )
+              );
+            }
+          } else {
+            redis = _this.subscriber.getInstance();
+          }
+
           if (!redis) {
             command.reject(new AbortError("No subscriber for the cluster"));
             return;
@@ -591,26 +666,39 @@ class Cluster extends Commander {
                 : _this.connectionPool.getSampleInstance(to)) ||
               _this.connectionPool.getSampleInstance("all");
           }
+          if (
+            redis &&
+            !_this.options.enableOfflineQueue &&
+            redis.status !== "ready" &&
+            redis.status !== "wait"
+          ) {
+            command.reject(new Error(CONNECTION_CLOSED_ERROR_MSG));
+            return;
+          }
         }
         if (node && !node.redis) {
           node.redis = redis;
         }
       }
-      if (redis) {
-        redis.sendCommand(command, stream);
-      } else if (_this.options.enableOfflineQueue) {
+      if (!redis && _this.options.enableOfflineQueue) {
         _this.offlineQueue.push({
           command: command,
           stream: stream,
           node: node,
         });
-      } else {
+        return;
+      }
+
+      if (!redis) {
         command.reject(
           new Error(
             "Cluster isn't ready and enableOfflineQueue options is false"
           )
         );
+        return;
       }
+
+      redis.sendCommand(command, stream);
     }
     return command.promise;
   }
@@ -763,6 +851,10 @@ class Cluster extends Commander {
         });
       }, retryDelay);
     } else {
+      if (this.options.shardedSubscribers) {
+        this.subscriberGroupEmitter?.removeAllListeners();
+      }
+
       this.setStatus("end");
       this.flushQueue(new Error("None of startup nodes is available"));
     }
@@ -791,17 +883,23 @@ class Cluster extends Commander {
   }
 
   private natMapper(nodeKey: NodeKey | RedisOptions): RedisOptions {
-    if (this.options.natMap && typeof this.options.natMap === "object") {
-      const key =
-        typeof nodeKey === "string"
-          ? nodeKey
-          : `${nodeKey.host}:${nodeKey.port}`;
-      const mapped = this.options.natMap[key];
-      if (mapped) {
-        debug("NAT mapping %s -> %O", key, mapped);
-        return Object.assign({}, mapped);
-      }
+    const key =
+      typeof nodeKey === "string"
+        ? nodeKey
+        : `${nodeKey.host}:${nodeKey.port}`;
+
+    let mapped = null;
+    if (this.options.natMap && typeof this.options.natMap === "function") {
+      mapped = this.options.natMap(key);
+    } else if (this.options.natMap && typeof this.options.natMap === "object") {
+      mapped = this.options.natMap[key];
     }
+
+    if (mapped) {
+      debug("NAT mapping %s -> %O", key, mapped);
+      return Object.assign({}, mapped);
+    }
+
     return typeof nodeKey === "string"
       ? nodeKeyToRedisOptions(nodeKey)
       : nodeKey;
@@ -834,6 +932,7 @@ class Cluster extends Commander {
       timeout((err: Error, result) => {
         duplicatedConnection.disconnect();
         if (err) {
+          debug("error encountered running CLUSTER.SLOTS: %s", err);
           return callback(err);
         }
         if (
@@ -904,6 +1003,15 @@ class Cluster extends Commander {
         }
 
         this.connectionPool.reset(nodes);
+
+        if (this.options.shardedSubscribers) {
+          this.shardedSubscribers
+            .reset(this.slots, this.connectionPool.getNodes("all"))
+            .catch((err) => {
+              // TODO should we emit an error event here?
+              debug("Error while starting subscribers: %s", err);
+            });
+        }
         callback();
       }, this.options.slotsRefreshTimeout)
     );
@@ -1056,6 +1164,69 @@ class Cluster extends Commander {
       command: command,
       ...options,
     });
+  }
+
+  private createShardedSubscriberGroup() {
+    this.subscriberGroupEmitter = new EventEmitter();
+
+    this.shardedSubscribers = new ClusterSubscriberGroup(
+      this.subscriberGroupEmitter,
+      this.options
+    );
+
+    // Error handler used only for sharded-subscriber-triggered slots cache refreshes.
+    // Normal (non-subscriber) connections are created with lazyConnect: true and can
+    // become zombied. For sharded subscribers, a ClusterAllFailedError means
+    // we have lost all nodes from the subscriber perspective and must tear down.
+    const refreshSlotsCacheCallback = (err?: Error) => {
+      // Disconnect only when refreshing the slots cache fails with ClusterAllFailedError
+      if (err instanceof ClusterAllFailedError) {
+        this.disconnect(true);
+      }
+    };
+
+    this.subscriberGroupEmitter.on("-node", (redis, nodeKey) => {
+      this.emit("-node", redis, nodeKey);
+
+      this.refreshSlotsCache(refreshSlotsCacheCallback);
+    });
+
+    this.subscriberGroupEmitter.on(
+      "subscriberConnectFailed",
+      ({ delay, error }) => {
+        this.emit("error", error);
+
+        setTimeout(() => {
+          this.refreshSlotsCache(refreshSlotsCacheCallback);
+        }, delay);
+      }
+    );
+
+    this.subscriberGroupEmitter.on("moved", () => {
+      this.refreshSlotsCache(refreshSlotsCacheCallback);
+    });
+
+    this.subscriberGroupEmitter.on("-subscriber", () => {
+      this.emit("-subscriber");
+    });
+
+    this.subscriberGroupEmitter.on("+subscriber", () => {
+      this.emit("+subscriber");
+    });
+
+    this.subscriberGroupEmitter.on("nodeError", (error, nodeKey) => {
+      this.emit("nodeError", error, nodeKey);
+    });
+
+    this.subscriberGroupEmitter.on("subscribersReady", () => {
+      this.emit("subscribersReady");
+    });
+
+    for (const event of ["smessage", "smessageBuffer"]) {
+      this.subscriberGroupEmitter.on(event, (arg1, arg2, arg3) => {
+        this.emit(event, arg1, arg2, arg3);
+      });
+    }
   }
 }
 

@@ -1,3 +1,168 @@
+## [5.11.1](https://github.com/luin/ioredis/compare/v5.11.0...v5.11.1) (2026-06-04)
+
+
+### Bug Fixes
+
+* **cluster:** reconnect to nodes that restart without slot changes ([#2096](https://github.com/luin/ioredis/issues/2096)) ([c84b2ee](https://github.com/luin/ioredis/commit/c84b2ee97fd7b25d8f6ef8b509c228a602f47cca))
+* parse protocol-relative Redis URLs as TCP connections ([#2125](https://github.com/luin/ioredis/issues/2125)) ([131ee24](https://github.com/luin/ioredis/commit/131ee24173380b986e62ecc428ddde82be12bc40))
+
+# [5.11.0](https://github.com/luin/ioredis/compare/v5.10.1...v5.11.0) (2026-05-26)
+
+
+### Bug Fixes
+
+* prevent RangeError from string accumulation in pipeline ([#2088](https://github.com/luin/ioredis/issues/2088)) ([defc077](https://github.com/luin/ioredis/commit/defc07716a9ef10c2077ec4e23ea48cb9ea731fc))
+* replace deprecated url.parse() with WHATWG URL API ([#2081](https://github.com/luin/ioredis/issues/2081)) ([0021a45](https://github.com/luin/ioredis/commit/0021a4590e286aabbf27f4e2fc18f9d2de829ef0)), closes [redis/ioredis#1747](https://github.com/redis/ioredis/issues/1747)
+
+
+### Features
+
+* add array commands, typings and tests ([#2114](https://github.com/luin/ioredis/issues/2114)) ([baf68d6](https://github.com/luin/ioredis/commit/baf68d6d89553672cfac3e08543467b910b561c5))
+* add increx command ([#2115](https://github.com/luin/ioredis/issues/2115)) ([37d0695](https://github.com/luin/ioredis/commit/37d0695b212d865ef24132acff85420ae51dde50))
+* add Redis MSETEX support ([#2111](https://github.com/luin/ioredis/issues/2111)) ([04a4615](https://github.com/luin/ioredis/commit/04a4615e8e96b9c58d017e360b5eaafede8973d0))
+* add typed GCRA command support and functional tests ([#2094](https://github.com/luin/ioredis/issues/2094)) ([468a802](https://github.com/luin/ioredis/commit/468a8023cd2c8f342ec7c55a01bf0c8d17e4b877))
+* add vector set command support ([#2116](https://github.com/luin/ioredis/issues/2116)) ([b7b3def](https://github.com/luin/ioredis/commit/b7b3defbd119d07fb86d071d5eefc255db4920c2))
+* Add xnack command ([#2103](https://github.com/luin/ioredis/issues/2103)) ([187d29b](https://github.com/luin/ioredis/commit/187d29b45000ee46a4baa8ce91eacfa04675aee8))
+* Add zinter zunion count ([#2104](https://github.com/luin/ioredis/issues/2104)) ([0d510bb](https://github.com/luin/ioredis/commit/0d510bbc1cfc8b01d862b76c408f6687f6e77809))
+* Implement `TracingChannel` support ([#2089](https://github.com/luin/ioredis/issues/2089)) ([4760e0a](https://github.com/luin/ioredis/commit/4760e0a19c194f29f4feb703003dcf046e4509cd))
+
+## [5.10.1](https://github.com/luin/ioredis/compare/v5.10.0...v5.10.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* **cluster:** lazily start sharded subscribers ([#2090](https://github.com/luin/ioredis/issues/2090)) ([4f167bb](https://github.com/luin/ioredis/commit/4f167bb9f494f0e8200a20dedd8bbdf1810fcd22))
+
+# [5.10.0](https://github.com/luin/ioredis/compare/v5.9.3...v5.10.0) (2026-02-27)
+
+
+### Features
+
+* add hash field expiration commands and tests ([5219f9f](https://github.com/luin/ioredis/commit/5219f9f6ae40c5b4e9bc40581d6513da27dbf1c2))
+* add hexpireat & hexpiretime ([#2082](https://github.com/luin/ioredis/issues/2082)) ([b38124f](https://github.com/luin/ioredis/commit/b38124f784cc6d170ff60f508f3bc34269806f47))
+
+## [5.9.3](https://github.com/luin/ioredis/compare/v5.9.2...v5.9.3) (2026-02-12)
+
+
+### Bug Fixes
+
+* autopipelining to route writes to masters with scaleReads ([#2072](https://github.com/luin/ioredis/issues/2072)) ([8adb1ae](https://github.com/luin/ioredis/commit/8adb1aeb6f01cb2cf832c1f218033daf2a722925))
+* fix issue with moved command for replicas ([#2064](https://github.com/luin/ioredis/issues/2064)) ([de4eed4](https://github.com/luin/ioredis/commit/de4eed4c88c1222002223b17d6d481c2a12df329))
+* **types:** optional properties on RedisOptions allow explicit undefined ([#2066](https://github.com/luin/ioredis/issues/2066)) ([0a1a898](https://github.com/luin/ioredis/commit/0a1a8982f9c912c78de68295e1f56136b62a645e))
+
+## [5.9.3](https://github.com/luin/ioredis/compare/v5.9.2...v5.9.3) (2026-02-12)
+
+
+### Bug Fixes
+
+* autopipelining to route writes to masters with scaleReads ([#2072](https://github.com/luin/ioredis/issues/2072)) ([8adb1ae](https://github.com/luin/ioredis/commit/8adb1aeb6f01cb2cf832c1f218033daf2a722925))
+* fix issue with moved command for replicas ([#2064](https://github.com/luin/ioredis/issues/2064)) ([de4eed4](https://github.com/luin/ioredis/commit/de4eed4c88c1222002223b17d6d481c2a12df329))
+* **types:** optional properties on RedisOptions allow explicit undefined ([#2066](https://github.com/luin/ioredis/issues/2066)) ([0a1a898](https://github.com/luin/ioredis/commit/0a1a8982f9c912c78de68295e1f56136b62a645e))
+
+## [5.9.2](https://github.com/luin/ioredis/compare/v5.9.1...v5.9.2) (2026-01-15)
+
+
+### Bug Fixes
+
+* **cluster:** Cluster reconnect sharded subscribers ([#2060](https://github.com/luin/ioredis/issues/2060)) ([def9804](https://github.com/luin/ioredis/commit/def9804dd44faa13dd57347c7353142ec0bd2d8f))
+* preserve replica slots on MOVED in pipelines ([#2059](https://github.com/luin/ioredis/issues/2059)) ([a1c3e9d](https://github.com/luin/ioredis/commit/a1c3e9d3a1915cf4a699aff9781629e492f75076))
+
+
+### Reverts
+
+* Revert "fix: preserve replica slots on MOVED in pipelines (#2059)" (#2062) ([517b932](https://github.com/luin/ioredis/commit/517b93239648c06829c695112223c9f17c2e7f80)), closes [#2059](https://github.com/luin/ioredis/issues/2059) [#2062](https://github.com/luin/ioredis/issues/2062)
+
+## [5.9.1](https://github.com/luin/ioredis/compare/v5.9.0...v5.9.1) (2026-01-08)
+
+
+### Bug Fixes
+
+* make client-side blocking timeouts opt-in ([#2058](https://github.com/luin/ioredis/issues/2058)) ([07ed493](https://github.com/luin/ioredis/commit/07ed4939ce4228efa1f85f75c16528aa5f25862e))
+
+# [5.9.0](https://github.com/luin/ioredis/compare/v5.8.2...v5.9.0) (2026-01-05)
+
+
+### Bug Fixes
+
+* remove unnecessary case-sensitivity when working with commands ([#2036](https://github.com/luin/ioredis/issues/2036)) ([f33a2c8](https://github.com/luin/ioredis/commit/f33a2c823c8e908eb79cb5dc7f0a68b40c51422a))
+
+
+### Features
+
+* add timeout blocking commands ([#2052](https://github.com/luin/ioredis/issues/2052)) ([6ec78be](https://github.com/luin/ioredis/commit/6ec78bee58be2b2d7be9684e9ea05e897727aa91))
+* **cluster:** refactor sharded pub/sub v5 ([#2043](https://github.com/luin/ioredis/issues/2043)) ([a523f3a](https://github.com/luin/ioredis/commit/a523f3a3007ec4e4f58ff874699365c876da60d8))
+
+## [5.8.2](https://github.com/luin/ioredis/compare/v5.8.1...v5.8.2) (2025-10-21)
+
+
+### Bug Fixes
+
+* default IP family selection to 0 ([#2028](https://github.com/luin/ioredis/issues/2028)) ([fb082d6](https://github.com/luin/ioredis/commit/fb082d6a8ece4b0921379ac449215c7ec7435023)), closes [#2026](https://github.com/luin/ioredis/issues/2026)
+* move CLIENT SETINFO commands to connection handshake ([#2033](https://github.com/luin/ioredis/issues/2033)) ([fcbbbe8](https://github.com/luin/ioredis/commit/fcbbbe898fc2540f5c14ad1f5d301f89bc2e4c22))
+
+## [5.8.1](https://github.com/luin/ioredis/compare/v5.8.0...v5.8.1) (2025-10-06)
+
+
+### Bug Fixes
+
+* **ssubscribe:** re-subscribe sharded pubsub channels individually ([#2021](https://github.com/luin/ioredis/issues/2021)) ([f161367](https://github.com/luin/ioredis/commit/f161367e4f2965b1ffe076f7e87e750772f56234))
+
+# [5.8.0](https://github.com/luin/ioredis/compare/v5.7.0...v5.8.0) (2025-09-23)
+
+
+### Bug Fixes
+
+* **ssubscribe:** re-subscribe sharded pubsub channels individually on ready ([#2012](https://github.com/luin/ioredis/issues/2012)) ([55a410f](https://github.com/luin/ioredis/commit/55a410fb1d7201d5de90ebb7a18a1c3cbf359b12))
+
+
+### Features
+
+* add more xtrim method overloads and tests ([#2010](https://github.com/luin/ioredis/issues/2010)) ([8a3e052](https://github.com/luin/ioredis/commit/8a3e05205009325c1de417217c3f6156994b7079))
+* implement proper hpexpire command signatures and tests ([#2006](https://github.com/luin/ioredis/issues/2006)) ([95e80af](https://github.com/luin/ioredis/commit/95e80afa3f104a8911610bfeebdfb6c5cfc7a4cc))
+* **stream:** Add XDELEX command ([#2003](https://github.com/luin/ioredis/issues/2003)) ([7be3c8d](https://github.com/luin/ioredis/commit/7be3c8dc23403e247a32472998deff613fd8c9ad))
+* support client setinfo ([#2011](https://github.com/luin/ioredis/issues/2011)) ([a5d808b](https://github.com/luin/ioredis/commit/a5d808bc0bad8beab72ca0e044632a7178db5661))
+
+# [5.7.0](https://github.com/luin/ioredis/compare/v5.6.1...v5.7.0) (2025-07-31)
+
+
+### Bug Fixes
+
+* xread example for TypeScript ([#1872](https://github.com/luin/ioredis/issues/1872)) ([265ea59](https://github.com/luin/ioredis/commit/265ea5975a0447be12d7dd5e209256ecb42fc797))
+
+
+### Features
+
+* Implement hexpire for [#1898](https://github.com/luin/ioredis/issues/1898) ([#1918](https://github.com/luin/ioredis/issues/1918)) ([121202c](https://github.com/luin/ioredis/commit/121202ca1a461c627680d2332e60dd8b33feaff8))
+
+## [5.6.1](https://github.com/luin/ioredis/compare/v5.6.0...v5.6.1) (2025-04-11)
+
+
+### Bug Fixes
+
+* adding debug log on cluster.slots initial connection error ([bedcfb5](https://github.com/luin/ioredis/commit/bedcfb5d4b462c3f0a804ab32152d80029e72710))
+
+# [5.6.0](https://github.com/luin/ioredis/compare/v5.5.0...v5.6.0) (2025-03-05)
+
+
+### Features
+
+* Sharded pub/sub support via dedicated subscribers ([#1956](https://github.com/luin/ioredis/issues/1956)) ([963a395](https://github.com/luin/ioredis/commit/963a395cd52cc12c0aa2b2bd23b55248c5b97d19))
+
+# [5.5.0](https://github.com/luin/ioredis/compare/v5.4.2...v5.5.0) (2025-02-07)
+
+
+### Features
+
+* Add ability for nat mapping through function ([#1948](https://github.com/luin/ioredis/issues/1948)) ([3a04bee](https://github.com/luin/ioredis/commit/3a04bee10995832303916fe8c7854eb6f3dcb65d))
+* **HscanStream:** adding NOVALUES option ([#1943](https://github.com/luin/ioredis/issues/1943)) ([2f9843d](https://github.com/luin/ioredis/commit/2f9843ddfa8d46cbee6c858fefbf9c2cd3852503))
+
+## [5.4.2](https://github.com/luin/ioredis/compare/v5.4.1...v5.4.2) (2024-12-20)
+
+
+### Bug Fixes
+
+* Connection instability when using socketTimeout parameter ([#1937](https://github.com/luin/ioredis/issues/1937)) ([ca5e940](https://github.com/luin/ioredis/commit/ca5e9405f80318ef35c42d23da640df4b88b6670)), closes [#1919](https://github.com/luin/ioredis/issues/1919)
+
 ## [5.4.1](https://github.com/luin/ioredis/compare/v5.4.0...v5.4.1) (2024-04-17)
 
 

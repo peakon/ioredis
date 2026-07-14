@@ -94,6 +94,32 @@ module.exports = {
     }
   },
   append: "number",
+  arcount: "number",
+  ardel: "number",
+  ardelrange: "number",
+  arget: "string | null",
+  argetrange: "(string | null)[]",
+  argrep: (types) => {
+    return hasToken(types, "WITHVALUES")
+      ? "Array<[index: number, value: string]>"
+      : "number[]";
+  },
+  arinfo: "(string | number)[]",
+  arinsert: "number",
+  arlastitems: "(string | null)[]",
+  arlen: "number",
+  armget: "(string | null)[]",
+  armset: "number",
+  arnext: "number | null",
+  arop: (types) => {
+    if (hasToken(types, ["SUM", "MIN", "MAX"])) return "string | null";
+    if (hasToken(types, ["AND", "OR", "XOR"])) return "number | null";
+    if (hasToken(types, ["MATCH", "USED"])) return "number";
+  },
+  arring: "number",
+  arscan: "Array<[index: number, value: string]>",
+  arseek: "number",
+  arset: "number",
   asking: "'OK'",
   auth: "'OK'",
   bgrewriteaof: "string",
@@ -142,6 +168,8 @@ module.exports = {
   hdel: "number",
   hello: "unknown[]",
   hexists: "number",
+  hexpire: "number[]",
+  hpexpire: "number[]",
   hget: "string | null",
   hgetall: "[field: string, value: string][]",
   hincrby: "number",
@@ -188,6 +216,8 @@ module.exports = {
   incr: "number",
   incrby: "number",
   incrbyfloat: "string",
+  increx:
+    "[value: number, increment: number] | [value: string, increment: string]",
   info: "string",
   lolwut: "string",
   keys: "string[]",
@@ -213,6 +243,7 @@ module.exports = {
   migrate: "'OK'",
   move: "number",
   mset: "'OK'",
+  msetex: "number",
   msetnx: "number",
   persist: "number",
   pexpire: "number",
@@ -277,6 +308,23 @@ module.exports = {
   type: "string",
   unlink: "number",
   unwatch: "'OK'",
+  vadd: "number",
+  vcard: "number",
+  vdim: "number",
+  vemb: "string[] | null",
+  vgetattr: "string | null",
+  vinfo: "(string | number)[] | null",
+  vismember: "number",
+  vlinks: "string[][] | null",
+  vrandmember: (types) => {
+    return types.some((type) => type.includes("number"))
+      ? "string[]"
+      : "string | null";
+  },
+  vrange: "string[]",
+  vrem: "number",
+  vsetattr: "number",
+  vsim: "(string | null)[]",
   wait: "number",
   watch: "'OK'",
   zadd: (types) => {
@@ -334,6 +382,7 @@ module.exports = {
   xread: "[key: string, items: [id: string, fields: string[]][]][] | null",
   xreadgroup: "unknown[]",
   xack: "number",
+  xnack: "number",
   xclaim: "unknown[]",
   xautoclaim: "unknown[]",
   xpending: "unknown[]",

@@ -1,3 +1,4 @@
+import * as sinon from "sinon";
 import Redis from "../../lib/Redis";
 import { expect } from "chai";
 
@@ -22,7 +23,7 @@ describe("spub/ssub", function () {
     redis.ssubscribe("foo", function () {
       redis.set("foo", "bar", function (err) {
         expect(err instanceof Error);
-        expect(err.message).to.match(/subscriber mode/);
+        expect(err?.message).to.match(/subscriber mode/);
         redis.disconnect();
         done();
       });
@@ -83,6 +84,7 @@ describe("spub/ssub", function () {
       expect(channel).to.eql("foo");
       expect(message).to.eql("bar");
       if (!--pending) {
+        pub.disconnect();
         redis.disconnect();
         done();
       }
@@ -93,6 +95,7 @@ describe("spub/ssub", function () {
       expect(message).to.be.instanceof(Buffer);
       expect(message.toString()).to.eql("bar");
       if (!--pending) {
+        pub.disconnect();
         redis.disconnect();
         done();
       }
@@ -114,15 +117,10 @@ describe("spub/ssub", function () {
     });
   });
 
-  // TODO ready reconnect in redis stand
   it("should restore subscription after reconnecting(ssubscribe)", (done) => {
-    const redis = new Redis({ port: 6379, host: "127.0.0.1" });
-    const pub = new Redis({ port: 6379, host: "127.0.0.1" });
-    // redis.ping(function (err, result) {
-    //   // redis.on("message", function (channel, message) {
-    //   console.log(`${err}-${result}`);
-    //   // });
-    // });
+    // It defaults to port: 6379, host: 127.0.0.1
+    const redis = new Redis();
+    const pub = new Redis();
     redis.ssubscribe("foo", "bar", function () {
       redis.on("ready", function () {
         // Execute a random command to make sure that `subscribe`
@@ -142,5 +140,38 @@ describe("spub/ssub", function () {
       });
       redis.disconnect(true);
     });
+  });
+
+  // This ensures we don't get CROSSSLOT exceptions
+  it("should call ssubscribe individually for each channel during auto-resubscription", async () => {
+    const subscriber = new Redis({ autoResubscribe: true });
+
+    await subscriber.ping();
+
+    // Await each subscription so all 3 channels are registered on the server
+    // before we stub and disconnect; without this, disconnect can fire before
+    // subscriptions complete, leaving the auto-resubscribe list incomplete.
+    await subscriber.ssubscribe("shard1");
+    await subscriber.ssubscribe("shard2");
+    await subscriber.ssubscribe("shard3");
+
+    const stub = sinon.stub(Redis.prototype, "ssubscribe");
+
+    subscriber.disconnect(true);
+
+    // Auto-resubscribe iterates channels synchronously before "ready" emits
+    // (see lib/redis/event_handler.ts), so by the time we observe "ready",
+    // all ssubscribe calls are already recorded on the stub. No wait needed.
+    await new Promise<void>((resolve) => {
+      subscriber.once("ready", resolve);
+    });
+
+    expect(stub.callCount).to.equal(3);
+    expect(stub.getCall(0).args).to.deep.equal(["shard1"]);
+    expect(stub.getCall(1).args).to.deep.equal(["shard2"]);
+    expect(stub.getCall(2).args).to.deep.equal(["shard3"]);
+
+    stub.restore();
+    subscriber.disconnect();
   });
 });

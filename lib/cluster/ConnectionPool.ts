@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import { sample, Debug, noop, defaults } from "../utils";
 import { RedisOptions, getNodeKey, NodeKey, NodeRole } from "./util";
+import { ClusterOptions, ClusterNodeRetryStrategy } from "./ClusterOptions";
 import Redis from "../Redis";
 
 const debug = Debug("cluster:connectionPool");
@@ -17,7 +18,10 @@ export default class ConnectionPool extends EventEmitter {
 
   private specifiedOptions: { [key: string]: any } = {};
 
-  constructor(private redisOptions) {
+  constructor(
+    private redisOptions: NonNullable<ClusterOptions["redisOptions"]>,
+    private clusterNodeRetryStrategy: ClusterNodeRetryStrategy = null
+  ) {
     super();
   }
 
@@ -35,6 +39,60 @@ export default class ConnectionPool extends EventEmitter {
     const sampleKey = sample(keys);
     return this.nodes[role][sampleKey];
   }
+
+
+  /**
+   * Add a master node to the pool
+   * @param node
+   */
+  addMasterNode(node: RedisOptions) {
+    const key = getNodeKey(node.options);
+    const redis : Redis = this.createRedisFromOptions(node, node.options.readOnly)
+
+    //Master nodes aren't read-only
+    if (!node.options.readOnly) {
+      this.nodes.all[key] = redis;
+      this.nodes.master[key] = redis;
+      return true;
+    }
+
+    return false;
+  }
+
+
+  /**
+   * Creates a Redis connection instance from the node options
+   * @param node
+   * @param readOnly
+   */
+  createRedisFromOptions(node: RedisOptions, readOnly: boolean) {
+    const redis = new Redis(
+        defaults(
+            {
+              // By default, never try to reconnect when a node is lost,
+              // instead, waiting for a `MOVED` error and fetching slots again.
+              // When `clusterNodeRetryStrategy` is set, use it to allow
+              // reconnection (e.g. for replica nodes that restart without
+              // any slot changes).
+              retryStrategy:
+                typeof this.clusterNodeRetryStrategy === "function"
+                  ? this.clusterNodeRetryStrategy
+                  : null,
+              // Offline queue should be enabled so that
+              // we don't need to wait for the `ready` event
+              // before sending commands to the node.
+              enableOfflineQueue: true,
+              readOnly: readOnly,
+            },
+            node,
+            this.redisOptions,
+            { lazyConnect: true }
+        )
+    );
+
+    return redis
+  }
+
 
   /**
    * Find or create a connection to the node
@@ -66,24 +124,7 @@ export default class ConnectionPool extends EventEmitter {
       }
     } else {
       debug("Connecting to %s as %s", key, readOnly ? "slave" : "master");
-      redis = new Redis(
-        defaults(
-          {
-            // Never try to reconnect when a node is lose,
-            // instead, waiting for a `MOVED` error and
-            // fetch the slots again.
-            retryStrategy: null,
-            // Offline queue should be enabled so that
-            // we don't need to wait for the `ready` event
-            // before sending commands to the node.
-            enableOfflineQueue: true,
-            readOnly: readOnly,
-          },
-          node,
-          this.redisOptions,
-          { lazyConnect: true }
-        )
-      );
+      redis = this.createRedisFromOptions(node, readOnly);
       this.nodes.all[key] = redis;
       this.nodes[readOnly ? "slave" : "master"][key] = redis;
 
@@ -97,7 +138,7 @@ export default class ConnectionPool extends EventEmitter {
 
       this.emit("+node", redis, key);
 
-      redis.on("error", function (error) {
+      redis.on("error", (error) => {
         this.emit("nodeError", error, key);
       });
     }

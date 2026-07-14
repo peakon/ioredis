@@ -1,5 +1,5 @@
 import { SrvRecord, resolveSrv, lookup } from "dns";
-import { RedisOptions } from "../redis/RedisOptions";
+import { RedisOptions, RetryStrategy } from "../redis/RedisOptions";
 import { CommanderOptions } from "../utils/Commander";
 import { NodeRole } from "./util";
 
@@ -19,9 +19,17 @@ export type DNSLookupFunction = (
     family?: number
   ) => void
 ) => void;
-export interface NatMap {
-  [key: string]: { host: string; port: number };
-}
+
+export type NatMapFunction = (
+  key: string
+) => { host: string; port: number } | null;
+export type NatMap =
+  | {
+      [key: string]: { host: string; port: number };
+    }
+  | NatMapFunction;
+
+export type ClusterNodeRetryStrategy = RetryStrategy;
 
 /**
  * Options for Cluster constructor
@@ -32,17 +40,17 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default (times) => Math.min(100 + times * 2, 2000)
    */
-  clusterRetryStrategy?: (
-    times: number,
-    reason?: Error
-  ) => number | void | null;
+  clusterRetryStrategy?:
+    | ((times: number, reason?: Error) => number | void | null)
+    | null
+    | undefined;
 
   /**
    * See Redis class.
    *
    * @default true
    */
-  enableOfflineQueue?: boolean;
+  enableOfflineQueue?: boolean | undefined;
 
   /**
    * When enabled, ioredis only emits "ready" event when `CLUSTER INFO`
@@ -50,14 +58,14 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default true
    */
-  enableReadyCheck?: boolean;
+  enableReadyCheck?: boolean | undefined;
 
   /**
    * Scale reads to the node with the specified role.
    *
    * @default "master"
    */
-  scaleReads?: NodeRole | Function;
+  scaleReads?: NodeRole | Function | undefined;
 
   /**
    * When a MOVED or ASK error is received, client will redirect the
@@ -66,7 +74,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 16
    */
-  maxRedirections?: number;
+  maxRedirections?: number | undefined;
 
   /**
    * When an error is received when sending a command (e.g.
@@ -75,7 +83,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 100
    */
-  retryDelayOnFailover?: number;
+  retryDelayOnFailover?: number | undefined;
 
   /**
    * When a CLUSTERDOWN error is received, client will retry
@@ -83,7 +91,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 100
    */
-  retryDelayOnClusterDown?: number;
+  retryDelayOnClusterDown?: number | undefined;
 
   /**
    * When a TRYAGAIN error is received, client will retry
@@ -91,7 +99,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 100
    */
-  retryDelayOnTryAgain?: number;
+  retryDelayOnTryAgain?: number | undefined;
 
   /**
    * By default, this value is 0, which means when a `MOVED` error is received,
@@ -102,7 +110,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 0
    */
-  retryDelayOnMoved?: number;
+  retryDelayOnMoved?: number | undefined;
 
   /**
    * The milliseconds before a timeout occurs while refreshing
@@ -110,30 +118,59 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default 1000
    */
-  slotsRefreshTimeout?: number;
+  slotsRefreshTimeout?: number | undefined;
 
   /**
    * The milliseconds between every automatic slots refresh.
    *
    * @default 5000
    */
-  slotsRefreshInterval?: number;
+  slotsRefreshInterval?: number | undefined;
+
+  /**
+   * Use sharded subscribers instead of a single subscriber.
+   *
+   * If sharded subscribers are used, then one additional subscriber connection per master node
+   * is established. If you don't plan to use SPUBLISH/SSUBSCRIBE, then this should be disabled.
+   *
+   * @default false
+   */
+  shardedSubscribers?: boolean | undefined;
+
+  /**
+   * When a cluster node connection is closed, this function will be called
+   * to determine the retry delay (in ms). Returning `null` or a non-number
+   * disables reconnection for that node.
+   *
+   * By default this is `null`, meaning cluster nodes will NOT automatically
+   * reconnect — the cluster relies on `MOVED` errors to refresh topology.
+   * Set this to enable reconnection, e.g. for replica nodes that restart
+   * without any slot changes.
+   *
+   * @example
+   * clusterNodeRetryStrategy: (times) => Math.min(times * 100, 3000)
+   *
+   * @default null
+   */
+  clusterNodeRetryStrategy?: ClusterNodeRetryStrategy;
 
   /**
    * Passed to the constructor of `Redis`
    *
    * @default null
    */
-  redisOptions?: Omit<
-    RedisOptions,
-    | "port"
-    | "host"
-    | "path"
-    | "sentinels"
-    | "retryStrategy"
-    | "enableOfflineQueue"
-    | "readOnly"
-  >;
+  redisOptions?:
+    | Omit<
+        RedisOptions,
+        | "port"
+        | "host"
+        | "path"
+        | "sentinels"
+        | "retryStrategy"
+        | "enableOfflineQueue"
+        | "readOnly"
+      >
+    | undefined;
 
   /**
    * By default, When a new Cluster instance is created,
@@ -143,14 +180,14 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default false
    */
-  lazyConnect?: boolean;
+  lazyConnect?: boolean | undefined;
 
   /**
    * Discover nodes using SRV records
    *
    * @default false
    */
-  useSRVRecords?: boolean;
+  useSRVRecords?: boolean | undefined;
 
   /**
    * SRV records will be resolved via this function.
@@ -160,7 +197,7 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default require('dns').resolveSrv
    */
-  resolveSrv?: DNSResolveSrvFunction;
+  resolveSrv?: DNSResolveSrvFunction | undefined;
 
   /**
    * Hostnames will be resolved to IP addresses via this function.
@@ -172,34 +209,34 @@ export interface ClusterOptions extends CommanderOptions {
    *
    * @default require('dns').lookup
    */
-  dnsLookup?: DNSLookupFunction;
-  natMap?: NatMap;
+  dnsLookup?: DNSLookupFunction | undefined;
+  natMap?: NatMap | undefined;
 
   /**
    * See Redis class.
    *
    * @default false
    */
-  enableAutoPipelining?: boolean;
+  enableAutoPipelining?: boolean | undefined;
 
   /**
    * See Redis class.
    *
    * @default []
    */
-  autoPipeliningIgnoredCommands?: string[];
+  autoPipeliningIgnoredCommands?: string[] | undefined;
 
   /**
    * Custom LUA commands
    */
-  scripts?: Record<
-    string,
-    { lua: string; numberOfKeys?: number; readOnly?: boolean }
-  >;
+  scripts?:
+    | Record<string, { lua: string; numberOfKeys?: number; readOnly?: boolean }>
+    | undefined;
 }
 
 export const DEFAULT_CLUSTER_OPTIONS: ClusterOptions = {
   clusterRetryStrategy: (times) => Math.min(100 + times * 2, 2000),
+  clusterNodeRetryStrategy: null,
   enableOfflineQueue: true,
   enableReadyCheck: true,
   scaleReads: "master",
@@ -214,4 +251,5 @@ export const DEFAULT_CLUSTER_OPTIONS: ClusterOptions = {
   dnsLookup: lookup,
   enableAutoPipelining: false,
   autoPipeliningIgnoredCommands: [],
+  shardedSubscribers: false,
 };

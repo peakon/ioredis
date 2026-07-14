@@ -332,14 +332,189 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
    * - _complexity_: O(1). The amortized time complexity is O(1) assuming the appended value is small and the already present value is of any size, since the dynamic string library used by Redis will double the free space available on every reallocation.
    * - _since_: 2.0.0
    */
-  append(
-    key: RedisKey,
-    value: string | Buffer | number,
-    callback?: Callback<number>
-  ): Result<number, Context>;
+  append(key: RedisKey, value: string | Buffer | number, callback?: Callback<number>): Result<number, Context>;
 
   /**
-   * Sent by cluster clients after an -ASK redirect
+   * Returns the number of non-empty elements in an array.
+   * - _group_: array
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  arcount(key: RedisKey, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Deletes elements at the specified indices in an array.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the number of indices to delete
+   * - _since_: 8.8.0
+   */
+  ardel(...args: [key: RedisKey, ...indices: (number | string)[], callback: Callback<number>]): Result<number, Context>;
+  ardel(...args: [key: RedisKey, ...indices: (number | string)[]]): Result<number, Context>;
+
+  /**
+   * Deletes elements in one or more ranges.
+   * - _group_: array
+   * - _complexity_: Proportional to the number of existing elements / slices touched, not to the numeric span of the requested ranges
+   * - _since_: 8.8.0
+   */
+  ardelrange(...args: [key: RedisKey, ...ranges: (string | number)[], callback: Callback<number>]): Result<number, Context>;
+  ardelrange(...args: [key: RedisKey, ...ranges: (string | number)[]]): Result<number, Context>;
+
+  /**
+   * Gets the value at an index in an array.
+   * - _group_: array
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  arget(key: RedisKey, index: number | string, callback?: Callback<string | null>): Result<string | null, Context>;
+  argetBuffer(key: RedisKey, index: number | string, callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+
+  /**
+   * Gets values in a range of indices.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the range length
+   * - _since_: 8.8.0
+   */
+  argetrange(key: RedisKey, start: number | string, end: number | string, callback?: Callback<(string | null)[]>): Result<(string | null)[], Context>;
+  argetrangeBuffer(key: RedisKey, start: number | string, end: number | string, callback?: Callback<(Buffer | null)[]>): Result<(Buffer | null)[], Context>;
+
+  /**
+   * Searches array elements in a range using textual predicates.
+   * - _group_: array
+   * - _complexity_: O(P * C) where P is the number of visited positions in touched slices and C is the cost of evaluating the predicates on one existing element.
+   * - _since_: 8.8.0
+   */
+  argrep(key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, callback: Callback<number[]>): Result<number[], Context>;
+  argrep(...args: [key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, ...args: RedisValue[], callback: Callback<number[] | Array<[index: number, value: string]>>]): Result<number[] | Array<[index: number, value: string]>, Context>;
+  argrep<T extends RedisValue[]>(...args: [key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, ...args: T]): Result<'WITHVALUES' extends T[number] ? Array<[index: number, value: string]> : number[], Context>;
+  argrepBuffer(key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, callback: Callback<number[]>): Result<number[], Context>;
+  argrepBuffer(...args: [key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, ...args: RedisValue[], callback: Callback<number[] | Array<[index: number, value: Buffer]>>]): Result<number[] | Array<[index: number, value: Buffer]>, Context>;
+  argrepBuffer<T extends RedisValue[]>(...args: [key: RedisKey, start: number | string, end: number | string, predicate: 'EXACT' | 'MATCH' | 'GLOB' | 'RE', value: RedisValue, ...args: T]): Result<'WITHVALUES' extends T[number] ? Array<[index: number, value: Buffer]> : number[], Context>;
+
+  /**
+   * Returns metadata about an array.
+   * - _group_: array
+   * - _complexity_: O(1), or O(N) with FULL option where N is the number of slices.
+   * - _since_: 8.8.0
+   */
+  arinfo(key: RedisKey, callback?: Callback<(string | number)[]>): Result<(string | number)[], Context>;
+  arinfoBuffer(key: RedisKey, callback?: Callback<(Buffer | number)[]>): Result<(Buffer | number)[], Context>;
+  arinfo(key: RedisKey, full: 'FULL', callback?: Callback<(string | number)[]>): Result<(string | number)[], Context>;
+  arinfoBuffer(key: RedisKey, full: 'FULL', callback?: Callback<(Buffer | number)[]>): Result<(Buffer | number)[], Context>;
+
+  /**
+   * Inserts one or more values at consecutive indices.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the number of values
+   * - _since_: 8.8.0
+   */
+  arinsert(...args: [key: RedisKey, ...values: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  arinsert(...args: [key: RedisKey, ...values: (string | Buffer | number)[]]): Result<number, Context>;
+
+  /**
+   * Returns the most recently inserted elements.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the count
+   * - _since_: 8.8.0
+   */
+  arlastitems(key: RedisKey, count: number | string, callback?: Callback<(string | null)[]>): Result<(string | null)[], Context>;
+  arlastitemsBuffer(key: RedisKey, count: number | string, callback?: Callback<(Buffer | null)[]>): Result<(Buffer | null)[], Context>;
+  arlastitems(key: RedisKey, count: number | string, rev: 'REV', callback?: Callback<(string | null)[]>): Result<(string | null)[], Context>;
+  arlastitemsBuffer(key: RedisKey, count: number | string, rev: 'REV', callback?: Callback<(Buffer | null)[]>): Result<(Buffer | null)[], Context>;
+
+  /**
+   * Returns the length of an array (max index + 1).
+   * - _group_: array
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  arlen(key: RedisKey, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Gets values at multiple indices in an array.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the number of indices
+   * - _since_: 8.8.0
+   */
+  armget(...args: [key: RedisKey, ...indices: (number | string)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  armgetBuffer(...args: [key: RedisKey, ...indices: (number | string)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  armget(...args: [key: RedisKey, ...indices: (number | string)[]]): Result<(string | null)[], Context>;
+  armgetBuffer(...args: [key: RedisKey, ...indices: (number | string)[]]): Result<(Buffer | null)[], Context>;
+
+  /**
+   * Sets multiple index-value pairs in an array.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the number of pairs
+   * - _since_: 8.8.0
+   */
+  armset(...args: [key: RedisKey, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  armset(...args: [key: RedisKey, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+
+  /**
+   * Returns the next index ARINSERT would use.
+   * - _group_: array
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  arnext(key: RedisKey, callback?: Callback<number | null>): Result<number | null, Context>;
+
+  /**
+   * Performs aggregate operations on array elements in a range.
+   * - _group_: array
+   * - _complexity_: O(P) where P is visited positions in touched slices (dense scanned slots + sparse entries), with worst-case O(|end-start|+1) and typical case close to O(N), where N is the number of existing elements in range.
+   * - _since_: 8.8.0
+   */
+  arop(key: RedisKey, start: number | string, end: number | string, sum: 'SUM', callback?: Callback<string | null>): Result<string | null, Context>;
+  aropBuffer(key: RedisKey, start: number | string, end: number | string, sum: 'SUM', callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, min: 'MIN', callback?: Callback<string | null>): Result<string | null, Context>;
+  aropBuffer(key: RedisKey, start: number | string, end: number | string, min: 'MIN', callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, max: 'MAX', callback?: Callback<string | null>): Result<string | null, Context>;
+  aropBuffer(key: RedisKey, start: number | string, end: number | string, max: 'MAX', callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, and: 'AND', callback?: Callback<number | null>): Result<number | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, or: 'OR', callback?: Callback<number | null>): Result<number | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, xor: 'XOR', callback?: Callback<number | null>): Result<number | null, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, match: 'MATCH', value: string | Buffer | number, callback?: Callback<number>): Result<number, Context>;
+  arop(key: RedisKey, start: number | string, end: number | string, used: 'USED', callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Inserts values into a ring buffer of specified size, wrapping and truncating as needed.
+   * - _group_: array
+   * - _complexity_: O(M) normally, O(N+M) on ring resize, where N is the maximum of the old and new ring size and M is the number of inserted values
+   * - _since_: 8.8.0
+   */
+  arring(...args: [key: RedisKey, size: number | string, ...values: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  arring(...args: [key: RedisKey, size: number | string, ...values: (string | Buffer | number)[]]): Result<number, Context>;
+
+  /**
+   * Iterates existing elements in a range, returning index-value pairs.
+   * - _group_: array
+   * - _complexity_: O(P) where P is visited positions in touched slices (dense scanned slots + sparse entries), with worst-case O(|end-start|+1) and typical case close to O(N), where N is the number of existing elements in range.
+   * - _since_: 8.8.0
+   */
+  arscan(key: RedisKey, start: number | string, end: number | string, callback?: Callback<Array<[index: number, value: string]>>): Result<Array<[index: number, value: string]>, Context>;
+  arscanBuffer(key: RedisKey, start: number | string, end: number | string, callback?: Callback<Array<[index: number, value: Buffer]>>): Result<Array<[index: number, value: Buffer]>, Context>;
+  arscan(key: RedisKey, start: number | string, end: number | string, limitToken: 'LIMIT', limit: number | string, callback?: Callback<Array<[index: number, value: string]>>): Result<Array<[index: number, value: string]>, Context>;
+  arscanBuffer(key: RedisKey, start: number | string, end: number | string, limitToken: 'LIMIT', limit: number | string, callback?: Callback<Array<[index: number, value: Buffer]>>): Result<Array<[index: number, value: Buffer]>, Context>;
+
+  /**
+   * Sets the ARINSERT / ARRING cursor to a specific index.
+   * - _group_: array
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  arseek(key: RedisKey, index: number | string, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Sets one or more contiguous values starting at an index in an array.
+   * - _group_: array
+   * - _complexity_: O(N) where N is the number of values
+   * - _since_: 8.8.0
+   */
+  arset(...args: [key: RedisKey, index: number | string, ...values: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  arset(...args: [key: RedisKey, index: number | string, ...values: (string | Buffer | number)[]]): Result<number, Context>;
+
+  /**
+   * Signals that a cluster client is following an -ASK redirect.
    * - _group_: cluster
    * - _complexity_: O(1)
    * - _since_: 3.0.0
@@ -3871,6 +4046,49 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   ): Result<number, Context>;
 
   /**
+   * Set expiry for hash field using relative time to expire (seconds)
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hexpire(...args: [key: RedisKey, seconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpire(...args: [key: RedisKey, seconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Set expiry for hash field using an absolute Unix timestamp (seconds)
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpireat(...args: [key: RedisKey, unixTimeSeconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Returns the expiration time of a hash field as a Unix timestamp, in seconds.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hexpiretime(...args: [key: RedisKey, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hexpiretime(...args: [key: RedisKey, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
    * Get the value of a hash field
    * - _group_: hash
    * - _complexity_: O(1)
@@ -3901,6 +4119,48 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     key: RedisKey,
     callback?: Callback<Record<string, Buffer>>
   ): Result<Record<string, Buffer>, Context>;
+
+  /**
+   * Returns the value of a field and deletes it from the hash.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 8.0.0
+   */
+  hgetdel(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetdelBuffer(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetdel(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetdelBuffer(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+
+  /**
+   * Get the value of one or more fields of a given hash key, and optionally set their expiration.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 8.0.0
+   */
+  hgetex(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, persist: "PERSIST", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, persist: "PERSIST", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  hgetex(...args: [key: RedisKey, persist: "PERSIST", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(string | null)[], Context>;
+  hgetexBuffer(...args: [key: RedisKey, persist: "PERSIST", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<(Buffer | null)[], Context>;
 
   /**
    * Increment the integer value of a hash field by the given number
@@ -4010,6 +4270,67 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   hmset(
     ...args: [key: RedisKey, ...fieldValues: (string | Buffer | number)[]]
   ): Result<"OK", Context>;
+
+  /**
+   * Removes the expiration time for each specified field
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hpersist(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpersist(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Set expiry for hash field using relative time to expire (milliseconds)
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, nx: 'NX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, xx: 'XX', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, gt: 'GT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpire(...args: [key: RedisKey, milliseconds: number | string, lt: 'LT', fieldsToken: 'FIELDS', numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Set expiry for hash field using an absolute Unix timestamp (milliseconds)
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, nx: "NX", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, nx: "NX", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, xx: "XX", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, xx: "XX", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, gt: "GT", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, gt: "GT", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, lt: "LT", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpireat(...args: [key: RedisKey, unixTimeMilliseconds: number | string, lt: "LT", fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Returns the expiration time of a hash field as a Unix timestamp, in msec.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hpexpiretime(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpexpiretime(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
+
+  /**
+   * Returns the TTL in milliseconds of a hash field.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  hpttl(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  hpttl(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
 
   /**
    * Get one or multiple random fields from a hash
@@ -4139,6 +4460,49 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   ): Result<number, Context>;
 
   /**
+   * Set the value of one or more fields of a given hash key, and optionally set their expiration.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of fields being set.
+   * - _since_: 8.0.0
+   */
+  hsetex(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fnx: "FNX", keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", secondsToken: "EX", seconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", millisecondsToken: "PX", milliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", unixTimeSecondsToken: "EXAT", unixTimeSeconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", unixTimeMillisecondsToken: "PXAT", unixTimeMilliseconds: number | string, fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  hsetex(...args: [key: RedisKey, fxx: "FXX", keepttl: "KEEPTTL", fieldsToken: "FIELDS", numfields: number | string, ...data: (string | Buffer | number)[]]): Result<number, Context>;
+
+  /**
    * Set the value of a hash field, only if the field does not exist
    * - _group_: hash
    * - _complexity_: O(1)
@@ -4162,6 +4526,15 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     field: string | Buffer,
     callback?: Callback<number>
   ): Result<number, Context>;
+
+  /**
+   * Returns the TTL in seconds of a hash field.
+   * - _group_: hash
+   * - _complexity_: O(N) where N is the number of specified fields
+   * - _since_: 7.4.0
+   */
+  httl(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[], callback: Callback<number[]>]): Result<number[], Context>;
+  httl(...args: [key: RedisKey, fieldsToken: "FIELDS", numfields: number | string, ...fields: (string | Buffer)[]]): Result<number[], Context>;
 
   /**
    * Get all the values in a hash
@@ -4209,6 +4582,17 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     increment: number | string,
     callback?: Callback<string>
   ): Result<string, Context>;
+
+  /**
+   * Increments the numeric value of a key by a number and sets its expiration time. Uses 0 as initial value if the key doesn't exist.
+   * - _group_: string
+   * - _complexity_: O(1)
+   * - _since_: 8.8.0
+   */
+  increx(...args: [key: RedisKey, ...args: (RedisValue)[], callback: Callback<[value: number, increment: number] | [value: string, increment: string]>]): Result<[value: number, increment: number] | [value: string, increment: string], Context>;
+  increxBuffer(...args: [key: RedisKey, ...args: (RedisValue)[], callback: Callback<[value: number, increment: number] | [value: Buffer, increment: Buffer]>]): Result<[value: number, increment: number] | [value: Buffer, increment: Buffer], Context>;
+  increx(...args: [key: RedisKey, ...args: (RedisValue)[]]): Result<[value: number, increment: number] | [value: string, increment: string], Context>;
+  increxBuffer(...args: [key: RedisKey, ...args: (RedisValue)[]]): Result<[value: number, increment: number] | [value: Buffer, increment: Buffer], Context>;
 
   /**
    * Get information and statistics about the server
@@ -5302,6 +5686,49 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   mset(
     ...args: [...keyValues: (RedisKey | string | Buffer | number)[]]
   ): Result<"OK", Context>;
+
+  /**
+   * Atomically sets multiple string keys with a shared expiration in a single operation. Supports flexible argument parsing where condition and expiration flags can appear in any order.
+   * - _group_: string
+   * - _complexity_: O(N) where N is the number of keys to set.
+   * - _since_: 8.4.0
+   */
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[]]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], secondsToken: 'EX', seconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], secondsToken: 'EX', seconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], millisecondsToken: 'PX', milliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], millisecondsToken: 'PX', milliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], keepttl: 'KEEPTTL', callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], keepttl: 'KEEPTTL']): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX']): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', secondsToken: 'EX', seconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', secondsToken: 'EX', seconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', millisecondsToken: 'PX', milliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', millisecondsToken: 'PX', milliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', keepttl: 'KEEPTTL', callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], nx: 'NX', keepttl: 'KEEPTTL']): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX']): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', secondsToken: 'EX', seconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', secondsToken: 'EX', seconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', millisecondsToken: 'PX', milliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', millisecondsToken: 'PX', milliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', unixTimeSecondsToken: 'EXAT', unixTimeSeconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string, callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', unixTimeMillisecondsToken: 'PXAT', unixTimeMilliseconds: number | string]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', keepttl: 'KEEPTTL', callback: Callback<number>]): Result<number, Context>;
+  msetex(...args: [numkeys: number | string, ...data: (RedisKey | string | Buffer | number)[], xx: 'XX', keepttl: 'KEEPTTL']): Result<number, Context>;
 
   /**
    * Set multiple keys to multiple values, only if none of the keys exist
@@ -8460,6 +8887,128 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   unwatch(callback?: Callback<"OK">): Result<"OK", Context>;
 
   /**
+   * Add one or more elements to a vector set, or update its vector if it already exists
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vadd(...args: [key: RedisKey, ...args: (RedisValue)[], callback: Callback<number>]): Result<number, Context>;
+  vadd(...args: [key: RedisKey, ...args: (RedisValue)[]]): Result<number, Context>;
+
+  /**
+   * Return the number of elements in a vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vcard(key: RedisKey, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Return the dimension of vectors in the vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vdim(key: RedisKey, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Return the vector associated with an element
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vemb(key: RedisKey, element: string | Buffer | number, callback?: Callback<string[] | null>): Result<string[] | null, Context>;
+  vembBuffer(key: RedisKey, element: string | Buffer | number, callback?: Callback<Buffer[] | null>): Result<Buffer[] | null, Context>;
+  vemb(key: RedisKey, element: string | Buffer | number, raw: 'RAW', callback?: Callback<string[] | null>): Result<string[] | null, Context>;
+  vembBuffer(key: RedisKey, element: string | Buffer | number, raw: 'RAW', callback?: Callback<Buffer[] | null>): Result<Buffer[] | null, Context>;
+
+  /**
+   * Retrieve the JSON attributes of elements
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vgetattr(key: RedisKey, element: string | Buffer | number, callback?: Callback<string | null>): Result<string | null, Context>;
+  vgetattrBuffer(key: RedisKey, element: string | Buffer | number, callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+
+  /**
+   * Return information about a vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vinfo(key: RedisKey, callback?: Callback<(string | number)[] | null>): Result<(string | number)[] | null, Context>;
+  vinfoBuffer(key: RedisKey, callback?: Callback<(Buffer | number)[] | null>): Result<(Buffer | number)[] | null, Context>;
+
+  /**
+   * Check if an element exists in a vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vismember(key: RedisKey, element: string | Buffer | number, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Return the neighbors of an element at each layer in the HNSW graph
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vlinks(key: RedisKey, element: string | Buffer | number, callback?: Callback<string[][] | null>): Result<string[][] | null, Context>;
+  vlinksBuffer(key: RedisKey, element: string | Buffer | number, callback?: Callback<Buffer[][] | null>): Result<Buffer[][] | null, Context>;
+  vlinks(key: RedisKey, element: string | Buffer | number, withscores: 'WITHSCORES', callback?: Callback<string[][] | null>): Result<string[][] | null, Context>;
+  vlinksBuffer(key: RedisKey, element: string | Buffer | number, withscores: 'WITHSCORES', callback?: Callback<Buffer[][] | null>): Result<Buffer[][] | null, Context>;
+
+  /**
+   * Return one or multiple random members from a vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vrandmember(key: RedisKey, callback?: Callback<string | null>): Result<string | null, Context>;
+  vrandmemberBuffer(key: RedisKey, callback?: Callback<Buffer | null>): Result<Buffer | null, Context>;
+  vrandmember(key: RedisKey, count: number | string, callback?: Callback<string[]>): Result<string[], Context>;
+  vrandmemberBuffer(key: RedisKey, count: number | string, callback?: Callback<Buffer[]>): Result<Buffer[], Context>;
+
+  /**
+   * Return vector set elements in a lex range
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.4.0
+   */
+  vrange(key: RedisKey, start: string | Buffer | number, end: string | Buffer | number, callback?: Callback<string[]>): Result<string[], Context>;
+  vrangeBuffer(key: RedisKey, start: string | Buffer | number, end: string | Buffer | number, callback?: Callback<Buffer[]>): Result<Buffer[], Context>;
+  vrange(key: RedisKey, start: string | Buffer | number, end: string | Buffer | number, count: number | string, callback?: Callback<string[]>): Result<string[], Context>;
+  vrangeBuffer(key: RedisKey, start: string | Buffer | number, end: string | Buffer | number, count: number | string, callback?: Callback<Buffer[]>): Result<Buffer[], Context>;
+
+  /**
+   * Remove an element from a vector set
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vrem(key: RedisKey, element: string | Buffer | number, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Associate or remove the JSON attributes of elements
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vsetattr(key: RedisKey, element: string | Buffer | number, json: string | Buffer, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Return elements by vector similarity
+   * - _group_: module
+   * - _complexity_: undefined
+   * - _since_: 8.0.0
+   */
+  vsim(...args: [key: RedisKey, ...args: (RedisValue)[], callback: Callback<(string | null)[]>]): Result<(string | null)[], Context>;
+  vsimBuffer(...args: [key: RedisKey, ...args: (RedisValue)[], callback: Callback<(Buffer | null)[]>]): Result<(Buffer | null)[], Context>;
+  vsim(...args: [key: RedisKey, ...args: (RedisValue)[]]): Result<(string | null)[], Context>;
+  vsimBuffer(...args: [key: RedisKey, ...args: (RedisValue)[]]): Result<(Buffer | null)[], Context>;
+
+  /**
    * Wait for the synchronous replication of all the write commands sent in the context of the current connection
    * - _group_: generic
    * - _complexity_: O(1)
@@ -9469,6 +10018,87 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   ): Result<number, Context>;
 
   /**
+   * Deletes one or multiple entries from the stream.
+   * - _group_: stream
+   * - _complexity_: O(1) for each single item to delete in the stream, regardless of the stream size.
+   * - _since_: 8.2.0
+   */
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[],
+      callback: Callback<unknown>
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[]
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      keepref: "KEEPREF",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[],
+      callback: Callback<unknown>
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      keepref: "KEEPREF",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[]
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      delref: "DELREF",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[],
+      callback: Callback<unknown>
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      delref: "DELREF",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[]
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      acked: "ACKED",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[],
+      callback: Callback<unknown>
+    ]
+  ): Result<unknown, Context>;
+  xdelex(
+    ...args: [
+      key: RedisKey,
+      acked: "ACKED",
+      idsToken: "IDS",
+      numids: number | string,
+      ...ids: (string | Buffer | number)[]
+    ]
+  ): Result<unknown, Context>;
+
+  /**
    * Create a consumer group.
    * - _group_: stream
    * - _complexity_: O(1)
@@ -9703,6 +10333,37 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
    * - _since_: 5.0.0
    */
   xlen(key: RedisKey, callback?: Callback<number>): Result<number, Context>;
+
+  /**
+   * Releases claimed messages back to the group's PEL without acknowledging them, making them available for re-delivery.
+   * - _group_: stream
+   * - _complexity_: O(1) for each message ID processed.
+   * - _since_: 8.8.0
+   */
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[]]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE']): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, silent: 'SILENT', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE']): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[]]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE']): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fail: 'FAIL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE']): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[]]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], force: 'FORCE']): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE', callback: Callback<number>]): Result<number, Context>;
+  xnack(...args: [key: RedisKey, group: string | Buffer, fatal: 'FATAL', idsToken: 'IDS', numids: number | string, ...ids: (string | Buffer | number)[], countToken: 'RETRYCOUNT', count: number | string, force: 'FORCE']): Result<number, Context>;
 
   /**
    * Return information and entries from a stream consumer group pending entries list, that are messages fetched but never acknowledged.
@@ -10260,7 +10921,7 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   ): Result<unknown, Context>;
 
   /**
-   * Trims the stream to (approximately if '~' is passed) a certain size
+   * Deletes messages from the beginning of a stream.
    * - _group_: stream
    * - _complexity_: O(N), with N being the number of evicted entries. Constant times are very small however, since entries are organized in macro nodes containing multiple entries that can be released with a single deallocation.
    * - _since_: 5.0.0
@@ -10275,8 +10936,56 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     key: RedisKey,
     maxlen: "MAXLEN",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
   xtrim(
@@ -10291,8 +11000,62 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     maxlen: "MAXLEN",
     equal: "=",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
   xtrim(
@@ -10307,8 +11070,62 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     maxlen: "MAXLEN",
     approximately: "~",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    maxlen: "MAXLEN",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
   xtrim(
@@ -10321,8 +11138,56 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     key: RedisKey,
     minid: "MINID",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
   xtrim(
@@ -10337,8 +11202,62 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     minid: "MINID",
     equal: "=",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    equal: "=",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
   xtrim(
@@ -10353,8 +11272,62 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     minid: "MINID",
     approximately: "~",
     threshold: string | Buffer | number,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    acked: "ACKED",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
     countToken: "LIMIT",
     count: number | string,
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    keepref: "KEEPREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    delref: "DELREF",
+    callback?: Callback<number>
+  ): Result<number, Context>;
+  xtrim(
+    key: RedisKey,
+    minid: "MINID",
+    approximately: "~",
+    threshold: string | Buffer | number,
+    countToken: "LIMIT",
+    count: number | string,
+    acked: "ACKED",
     callback?: Callback<number>
   ): Result<number, Context>;
 
@@ -12055,6 +13028,150 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   zinter(
     ...args: [
       numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
       ...args: RedisValue[],
       callback: Callback<string[]>
     ]
@@ -12315,6 +13432,78 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
       ...args: RedisValue[],
       aggregate: "AGGREGATE",
       max: "MAX",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zinter(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zinterBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
       withscores: "WITHSCORES"
     ]
   ): Result<Buffer[], Context>;
@@ -12530,6 +13719,44 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     ...args: [
       destination: RedisKey,
       numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
       ...args: RedisValue[],
       callback: Callback<number>
     ]
@@ -12596,6 +13823,25 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
       ...args: RedisValue[],
       aggregate: "AGGREGATE",
       max: "MAX"
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zinterstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
     ]
   ): Result<number, Context>;
 
@@ -14403,6 +15649,150 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
   zunion(
     ...args: [
       numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
       ...args: RedisValue[],
       callback: Callback<string[]>
     ]
@@ -14663,6 +16053,78 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
       ...args: RedisValue[],
       aggregate: "AGGREGATE",
       max: "MAX",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<string[]>
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES",
+      callback: Callback<Buffer[]>
+    ]
+  ): Result<Buffer[], Context>;
+  zunion(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      withscores: "WITHSCORES"
+    ]
+  ): Result<string[], Context>;
+  zunionBuffer(
+    ...args: [
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
       withscores: "WITHSCORES"
     ]
   ): Result<Buffer[], Context>;
@@ -14817,6 +16279,44 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
     ...args: [
       destination: RedisKey,
       numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      keys: RedisKey[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
       ...args: RedisValue[],
       callback: Callback<number>
     ]
@@ -14883,6 +16383,25 @@ interface RedisCommander<Context extends ClientContext = { type: "default" }> {
       ...args: RedisValue[],
       aggregate: "AGGREGATE",
       max: "MAX"
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT",
+      callback: Callback<number>
+    ]
+  ): Result<number, Context>;
+  zunionstore(
+    ...args: [
+      destination: RedisKey,
+      numkeys: number | string,
+      ...args: RedisValue[],
+      aggregate: "AGGREGATE",
+      count: "COUNT"
     ]
   ): Result<number, Context>;
 }

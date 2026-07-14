@@ -14,12 +14,14 @@ A robust, performance-focused and full-featured [Redis](http://redis.io) client 
 
 Supports Redis >= 2.6.12. Completely compatible with Redis 7.x.
 
+ioredis is a stable project and maintenance is done on a best-effort basis for relevant issues (contributions to ioredis will still be evaluated, reviewed, and merged when they benefit the project). For new projects, node-redis is the recommended client library. [node-redis](https://github.com/redis/node-redis) is the open-source (MIT license) Redis JavaScript client library redesigned from the ground up and actively maintained. [node-redis](https://github.com/redis/node-redis) supports new (hash-field expiration) and future commands and the capabilities available in Redis Stack and Redis 8 (search, JSON, time-series, probabilistic data structures).
+
 # Features
 
 ioredis is a robust, full-featured Redis client that is
 used in the world's biggest online commerce company [Alibaba](http://www.alibaba.com/) and many other awesome companies.
 
-0. Full-featured. It supports [Cluster](http://redis.io/topics/cluster-tutorial), [Sentinel](https://redis.io/docs/reference/sentinel-clients), [Streams](https://redis.io/topics/streams-intro), [Pipelining](http://redis.io/topics/pipelining), and of course [Lua scripting](http://redis.io/commands/eval), [Redis Functions](https://redis.io/topics/functions-intro), [Pub/Sub](http://redis.io/topics/pubsub) (with the support of binary messages).
+0. Full-featured. It supports [Cluster](http://redis.io/topics/cluster-tutorial), [Sentinel](https://redis.io/docs/latest/operate/oss_and_stack/management/sentinel/), [Streams](https://redis.io/topics/streams-intro), [Pipelining](http://redis.io/topics/pipelining), and of course [Lua scripting](http://redis.io/commands/eval), [Redis Functions](https://redis.io/topics/functions-intro), [Pub/Sub](http://redis.io/topics/pubsub) (with the support of binary messages).
 1. High performance 🚀.
 2. Delightful API 😄. It works with Node callbacks and Native promises.
 3. Transformation of command arguments and replies.
@@ -44,7 +46,7 @@ used in the world's biggest online commerce company [Alibaba](http://www.alibaba
 | Version        | Branch | Node.js Version | Redis Version   |
 | -------------- | ------ | --------------- | --------------- |
 | 5.x.x (latest) | main   | >= 12           | 2.6.12 ~ latest |
-| 4.x.x          | v4     | >= 6            | 2.6.12 ~ 7      |
+| 4.x.x          | v4     | >= 8            | 2.6.12 ~ 7      |
 
 Refer to [CHANGELOG.md](CHANGELOG.md) for features and bug fixes introduced in v5.
 
@@ -260,7 +262,7 @@ async function listenForMessage(lastId = "$") {
   // `results` is an array, each element of which corresponds to a key.
   // Because we only listen to one key (mystream) here, `results` only contains
   // a single element. See more: https://redis.io/commands/xread#return-value
-  const results = await redis.xread("block", 0, "STREAMS", "mystream", lastId);
+  const results = await redis.xread("BLOCK", 0, "STREAMS", "mystream", lastId);
   const [key, messages] = results[0]; // `key` equals to "mystream"
 
   messages.forEach(processMessage);
@@ -723,8 +725,17 @@ There are also `hscanStream`, `zscanStream` and `sscanStream` to iterate through
 similar to `scanStream` except the first argument is the key name:
 
 ```javascript
+const stream = redis.zscanStream("myhash", {
+  match: "age:??",
+});
+```
+
+The `hscanStream` also accepts the `noValues` option to specify whether Redis should return only the keys in the hash table without their corresponding values.
+
+```javascript
 const stream = redis.hscanStream("myhash", {
   match: "age:??",
+  noValues: true,
 });
 ```
 
@@ -790,6 +801,27 @@ const redis = new Redis({
 
 Set maxRetriesPerRequest to `null` to disable this behavior, and every command will wait forever until the connection is alive again (which is the default behavior before ioredis v4).
 
+### Blocking Command Timeout
+
+ioredis can apply a client-side timeout to blocking commands (such as `blpop`, `brpop`, `bzpopmin`, `bzmpop`, `blmpop`, `xread`, `xreadgroup`, etc.). This protects against scenarios where the TCP connection becomes a zombie (e.g., due to a silent network failure like a Docker network disconnect) and Redis never replies.
+
+This feature is **opt-in**. It is **disabled by default** and is only enabled
+when `blockingTimeout` is set to a positive number of milliseconds. If
+`blockingTimeout` is omitted, `0`, or negative (for example `-1`), ioredis
+does not arm any client-side timeouts for blocking commands and their
+behavior matches Redis exactly.
+
+```javascript
+const redis = new Redis({
+  blockingTimeout: 30000, // Enable blocking timeout protection
+});
+```
+
+When enabled:
+
+- For commands with a finite timeout (e.g., `blpop("key", 5)`), ioredis sets a client-side deadline based on the command's timeout plus a small grace period (`blockingTimeoutGrace`, default 100ms). If no reply arrives before the deadline, the command resolves with `null`—the same value Redis returns when a blocking command times out normally.
+- For commands that block forever (e.g., `timeout = 0` or `BLOCK 0`), the `blockingTimeout` value is used as a safety net.
+
 ### Reconnect on Error
 
 Besides auto-reconnect when the connection is closed, ioredis supports reconnecting on certain Redis errors using the `reconnectOnError` option. Here's an example that will reconnect when receiving `READONLY` error:
@@ -814,15 +846,15 @@ On ElastiCache instances with Auto-failover enabled, `reconnectOnError` does not
 
 The Redis instance will emit some events about the state of the connection to the Redis server.
 
-| Event        | Description                                                                                                                                                                                                                                     |
-| :----------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| connect      | emits when a connection is established to the Redis server.                                                                                                                                                                                     |
-| ready        | If `enableReadyCheck` is `true`, client will emit `ready` when the server reports that it is ready to receive commands (e.g. finish loading data from disk).<br>Otherwise, `ready` will be emitted immediately right after the `connect` event. |
-| error        | emits when an error occurs while connecting.<br>However, ioredis emits all `error` events silently (only emits when there's at least one listener) so that your application won't crash if you're not listening to the `error` event.           |
-| close        | emits when an established Redis server connection has closed.                                                                                                                                                                                   |
-| reconnecting | emits after `close` when a reconnection will be made. The argument of the event is the time (in ms) before reconnecting.                                                                                                                        |
-| end          | emits after `close` when no more reconnections will be made, or the connection is failed to establish.                                                                                                                                          |
-| wait         | emits when `lazyConnect` is set and will wait for the first command to be called before connecting.                                                                                                                                             |
+| Event        | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| connect      | emits when a connection is established to the Redis server.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ready        | If `enableReadyCheck` is `true`, client will emit `ready` when the server reports that it is ready to receive commands (e.g. finish loading data from disk).<br>Otherwise, `ready` will be emitted immediately right after the `connect` event.                                                                                                                                                                                                                                                                                                          |
+| error        | emits when an error occurs while connecting.<br>However, ioredis emits all `error` events silently (only emits when there's at least one listener) so that your application won't crash if you're not listening to the `error` event.<br>When `redis.connect()` is explicitly called the error will also be rejected from the returned promise, in addition to emitting it. If `redis.connect()` is not called explicitly and `lazyConnect` is true, ioredis will try to connect automatically on the first command and emit the `error` event silently. |
+| close        | emits when an established Redis server connection has closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| reconnecting | emits after `close` when a reconnection will be made. The argument of the event is the time (in ms) before reconnecting.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| end          | emits after `close` when no more reconnections will be made, or the connection is failed to establish.                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| wait         | emits when `lazyConnect` is set and will wait for the first command to be called before connecting.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 You can also check out the `Redis#status` property to get the current connection status.
 
@@ -831,6 +863,38 @@ Besides the above connection events, there are several other custom events:
 | Event  | Description                                                         |
 | :----- | :------------------------------------------------------------------ |
 | select | emits when the database changed. The argument is the new db number. |
+
+## Diagnostics Channel
+
+ioredis publishes telemetry through Node.js [`diagnostics_channel`](https://nodejs.org/api/diagnostics_channel.html), allowing APM tools and custom instrumentation to observe commands, connections, and batch operations without modifying application code.
+
+These channels use `TracingChannel#tracePromise()` and emit `start`, `end`, `asyncStart`, `asyncEnd`, and `error` sub-events. Requires Node.js >= 18.19.0; on older versions the channels are silently unavailable (zero overhead). Subscribe via `tracing:<name>:<event>`:
+
+```typescript
+import dc from "node:diagnostics_channel";
+
+dc.subscribe("tracing:ioredis:command:start", ({ command, args }) => {
+  console.log(`> ${command}`, args);
+});
+
+dc.subscribe("tracing:ioredis:command:asyncEnd", ({ command }) => {
+  console.log(`${command} settled`);
+});
+
+dc.subscribe("tracing:ioredis:command:error", ({ command, error }) => {
+  console.error(`${command} failed:`, error);
+});
+```
+
+| Channel name      | Payload                 | Description                                              |
+| :---------------- | :---------------------- | :------------------------------------------------------- |
+| `ioredis:command` | `CommandTraceContext`   | Individual command (standalone, pipeline, or within MULTI) |
+| `ioredis:batch`   | `BatchOperationContext` | MULTI transaction as a whole                             |
+| `ioredis:connect` | `ConnectTraceContext`   | Socket connection attempt                                |
+
+Command arguments are sanitized before emission using rules adapted from `@opentelemetry/redis-common`. Sensitive values (e.g. values in `SET`, `AUTH` passwords) are replaced with `?`, while read-only commands like `GET` and `DEL` retain all arguments. This is safe by default: unlisted or custom commands have all arguments redacted.
+
+Context types (`CommandTraceContext`, `BatchOperationContext`, `ConnectTraceContext`) are exported from `ioredis`.
 
 ## Offline Queue
 
@@ -1032,6 +1096,14 @@ cluster.get("foo", (err, res) => {
       }
       ```
 
+    - `clusterNodeRetryStrategy`: Per-node retry strategy. By default, ioredis won't try to reconnect to a lost node and just waits for a `MOVED` error to refresh slots. If you pass a function here, it's used as the `retryStrategy` for each node — return a number to reconnect after that many ms, or anything else to drop the node from the pool. Handy for replica nodes that restart without slot changes (e.g. maintenance). Example:
+
+      ```javascript
+      function (times) {
+        return Math.min(100 * times, 2000);
+      }
+      ```
+
     - `dnsLookup`: Alternative DNS lookup function (`dns.lookup()` is used by default). It may be useful to override this in special cases, such as when AWS ElastiCache used with TLS enabled.
     - `enableOfflineQueue`: Similar to the `enableOfflineQueue` option of `Redis` class.
     - `enableReadyCheck`: When enabled, "ready" event will only be emitted when `CLUSTER INFO` command
@@ -1130,7 +1202,32 @@ const cluster = new Redis.Cluster(
 );
 ```
 
+Or you can specify this parameter through function:
+
+```javascript
+const cluster = new Redis.Cluster(
+  [
+    {
+      host: "203.0.113.73",
+      port: 30001,
+    },
+  ],
+  {
+    natMap: (key) => {
+      if (key.includes("30001")) {
+        return { host: "203.0.113.73", port: 30001 };
+      }
+
+      return null;
+    },
+  }
+);
+```
+
 This option is also useful when the cluster is running inside a Docker container.
+Also it works for Clusters in cloud infrastructure where cluster nodes connected through dedicated subnet.
+
+Specifying through may be useful if you don't know concrete internal host and know only node port.
 
 ### Transaction and Pipeline in Cluster Mode
 
@@ -1162,6 +1259,43 @@ sub.on("message", (channel, message) => {
 sub.subscribe("news", () => {
   pub.publish("news", "highlights");
 });
+```
+
+### Sharded Pub/Sub
+
+For sharded Pub/Sub, use the `spublish` and `ssubscribe` commands instead of the traditional `publish` and `subscribe`. With the old commands, the Redis cluster handles message propagation behind the scenes, allowing you to publish or subscribe to any node without considering sharding. However, this approach has scalability limitations that are addressed with sharded Pub/Sub. Here’s what you need to know:
+
+1. Instead of a single subscriber connection, there is now one subscriber connection per shard. Because of the potential overhead, you can enable or disable the use of the cluster subscriber group with the `shardedSubscribers` option. By default, this option is set to `false`, meaning sharded subscriptions are disabled. You should enable this option when establishing your cluster connection before using `ssubscribe`.
+2. All channel names that you pass to a single `ssubscribe` need to map to the same hash slot. You can call `ssubscribe` multiple times on the same cluster client instance to subscribe to channels across slots. The cluster's subscriber group takes care of forwarding the `ssubscribe` command to the shard that is responsible for the channels.
+
+The following basic example shows you how to use sharded Pub/Sub:
+
+```javascript
+const cluster: Cluster = new Cluster([{ host: host, port: port }], {
+  shardedSubscribers: true,
+});
+
+//Register the callback
+cluster.on("smessage", (channel, message) => {
+  console.log(message);
+});
+
+//Subscribe to the channels on the same slot
+cluster
+  .ssubscribe("channel{my}:1", "channel{my}:2")
+  .then((count: number) => {
+    console.log(count);
+  })
+  .catch((err) => {
+    console.log(err);
+  });
+
+//Publish a message
+cluster
+  .spublish("channel{my}:1", "This is a test message to my first channel.")
+  .then((value: number) => {
+    console.log("Published a message to channel{my}:1");
+  });
 ```
 
 ### Events
