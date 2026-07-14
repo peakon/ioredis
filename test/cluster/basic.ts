@@ -181,4 +181,25 @@ describe("cluster", () => {
     })
   });
 
+  describe("disconnect and connect again", () => {
+    it("works 20 times in a row", async () => {
+      const cluster = new Cluster([{ host: "127.0.0.1", port: masters[0] }]);
+
+      for (let i = 1; i <= 20; i++) {
+        await cluster.set("foo", `bar${i}`);
+
+        const endPromise = new Promise((resolve) =>
+          cluster.once("end", resolve)
+        );
+        await cluster.quit();
+        cluster.disconnect();
+        await endPromise;
+
+        cluster.connect();
+        expect(await cluster.get("foo")).to.equal(`bar${i}`);
+        await cluster.del("foo");
+      }
+    });
+  });
+
 });

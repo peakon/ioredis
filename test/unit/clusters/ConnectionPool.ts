@@ -69,5 +69,43 @@ describe("ConnectionPool", () => {
       pool.reset([]);
       expect(pool.getNodes().length).to.eql(0);
     });
+
+    it("does not emit drain while replacing nodes", () => {
+      const pool = new ConnectionPool({});
+      pool.reset([{ host: "127.0.0.1", port: 30001 }]);
+      const oldNode = pool.getNodes()[0];
+      sinon.stub(oldNode, "disconnect").callsFake(() => oldNode.emit("end"));
+      const drain = sinon.spy();
+      pool.on("drain", drain);
+
+      pool.reset([{ host: "127.0.0.1", port: 30002 }]);
+
+      expect(drain.callCount).to.eql(0);
+      pool.reset([]);
+    });
+
+    it("removes listeners when resetting the pool", () => {
+      const pool = new ConnectionPool({});
+      const redis = pool.findOrCreate({ host: "127.0.0.1", port: 30001 });
+      sinon.stub(redis, "disconnect");
+      const removeNode = sinon.spy();
+      const drain = sinon.spy();
+      const nodeError = sinon.spy();
+      pool.on("-node", removeNode);
+      pool.on("drain", drain);
+      pool.on("nodeError", nodeError);
+
+      pool.reset([]);
+
+      expect(removeNode.callCount).to.eql(1);
+      expect(drain.callCount).to.eql(1);
+
+      redis.emit("end");
+      redis.on("error", () => {});
+      redis.emit("error", new Error("test error"));
+      expect(removeNode.callCount).to.eql(1);
+      expect(drain.callCount).to.eql(1);
+      expect(nodeError.callCount).to.eql(0);
+    });
   });
 });
