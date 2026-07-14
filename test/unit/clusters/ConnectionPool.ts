@@ -107,5 +107,22 @@ describe("ConnectionPool", () => {
       expect(drain.callCount).to.eql(1);
       expect(nodeError.callCount).to.eql(0);
     });
+
+    it("does not throw when a -node listener resets the pool", () => {
+      const pool = new ConnectionPool({});
+      pool.reset([
+        { host: "127.0.0.1", port: 30001 },
+        { host: "127.0.0.1", port: 30002 },
+      ]);
+      const drain = sinon.spy();
+      pool.on("drain", drain);
+      pool.once("-node", () => pool.reset([]));
+
+      expect(() =>
+        pool.reset([{ host: "127.0.0.1", port: 30003 }]),
+      ).not.to.throw();
+      expect(pool.getNodes()).to.eql([]);
+      expect(drain.callCount).to.eql(1);
+    });
   });
 });

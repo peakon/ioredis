@@ -12,7 +12,7 @@ index 7fecdcf..0405604 100644
      }
  
 diff --git a/lib/cluster/ConnectionPool.ts b/lib/cluster/ConnectionPool.ts
-index 7c207ca..895897e 100644
+index 7c207ca..cb25329 100644
 --- a/lib/cluster/ConnectionPool.ts
 +++ b/lib/cluster/ConnectionPool.ts
 @@ -8,9 +8,15 @@ const debug = Debug("cluster:connectionPool");
@@ -149,27 +149,31 @@ index 7c207ca..895897e 100644
    }
  
    /**
-@@ -163,29 +164,49 @@ export default class ConnectionPool extends EventEmitter {
+@@ -163,29 +164,53 @@ export default class ConnectionPool extends EventEmitter {
        }
      });
  
 -    Object.keys(this.nodes.all).forEach((key) => {
-+    Object.keys(newNodes).forEach((key) => {
-+      const node = newNodes[key];
-+      this.findOrCreate(node, node.readOnly);
-+    });
-+    Object.keys(this.nodeRecords.all).forEach((key) => {
-       if (!newNodes[key]) {
-         debug("Disconnect %s because the node does not hold any slot", key);
+-      if (!newNodes[key]) {
+-        debug("Disconnect %s because the node does not hold any slot", key);
 -        this.nodes.all[key].disconnect();
-+        this.nodeRecords.all[key].redis.disconnect();
-         this.removeNode(key);
-       }
-     });
--    Object.keys(newNodes).forEach((key) => {
--      const node = newNodes[key];
--      this.findOrCreate(node, node.readOnly);
+-        this.removeNode(key);
+-      }
 -    });
+     Object.keys(newNodes).forEach((key) => {
+       const node = newNodes[key];
+       this.findOrCreate(node, node.readOnly);
+     });
++    Object.keys(this.nodeRecords.all).forEach((key) => {
++      const nodeRecord = this.nodeRecords.all[key];
++      if (!newNodes[key] && nodeRecord) {
++        debug("Disconnect %s because the node does not hold any slot", key);
++        nodeRecord.redis.disconnect();
++        if (this.nodeRecords.all[key] === nodeRecord) {
++          this.removeNode(key);
++        }
++      }
++    });
 +  }
 +
 +  private createNodeRecord(redis: Redis, key: NodeKey): NodeRecord {
@@ -201,8 +205,9 @@ index 7c207ca..895897e 100644
 +      delete nodeRecords.master[key];
 +      delete nodeRecords.slave[key];
 +
++      const shouldEmitDrain = !Object.keys(nodeRecords.all).length;
 +      this.emit("-node", nodeRecord.redis, key);
-+      if (!Object.keys(nodeRecords.all).length) {
++      if (shouldEmitDrain && !Object.keys(nodeRecords.all).length) {
 +        this.emit("drain");
 +      }
      }
@@ -240,6 +245,24 @@ index e1238ec..b9452f7 100644
 +  });
 +
  });
+diff --git a/test/functional/cluster/ConnectionPool.ts b/test/functional/cluster/ConnectionPool.ts
+new file mode 100644
+index 0000000..3f993ff
+--- /dev/null
++++ b/test/functional/cluster/ConnectionPool.ts
+@@ -0,0 +1,12 @@
++import { expect } from "chai";
++
++import ConnectionPool from "../../../lib/cluster/ConnectionPool";
++
++describe("The cluster connection pool", () => {
++  describe("when not connected", () => {
++    it("does not throw when fetching a sample node", () => {
++      expect(new ConnectionPool({}).getSampleInstance("all")).to.be.undefined;
++      expect(new ConnectionPool({}).getNodes("all")).to.be.eql([]);
++    });
++  });
++});
 diff --git a/test/functional/cluster/connect.ts b/test/functional/cluster/connect.ts
 index a2346f2..c0caf11 100644
 --- a/test/functional/cluster/connect.ts
@@ -325,10 +348,10 @@ index e31bdd9..c4b09a7 100644
      });
    });
 diff --git a/test/unit/clusters/ConnectionPool.ts b/test/unit/clusters/ConnectionPool.ts
-index 0901191..e396675 100644
+index 0901191..41839e6 100644
 --- a/test/unit/clusters/ConnectionPool.ts
 +++ b/test/unit/clusters/ConnectionPool.ts
-@@ -69,5 +69,43 @@ describe("ConnectionPool", () => {
+@@ -69,5 +69,60 @@ describe("ConnectionPool", () => {
        pool.reset([]);
        expect(pool.getNodes().length).to.eql(0);
      });
@@ -370,23 +393,22 @@ index 0901191..e396675 100644
 +      expect(drain.callCount).to.eql(1);
 +      expect(nodeError.callCount).to.eql(0);
 +    });
++
++    it("does not throw when a -node listener resets the pool", () => {
++      const pool = new ConnectionPool({});
++      pool.reset([
++        { host: "127.0.0.1", port: 30001 },
++        { host: "127.0.0.1", port: 30002 },
++      ]);
++      const drain = sinon.spy();
++      pool.on("drain", drain);
++      pool.once("-node", () => pool.reset([]));
++
++      expect(() =>
++        pool.reset([{ host: "127.0.0.1", port: 30003 }])
++      ).not.to.throw();
++      expect(pool.getNodes()).to.eql([]);
++      expect(drain.callCount).to.eql(1);
++    });
    });
  });
-diff --git a/test/functional/cluster/ConnectionPool.ts b/test/functional/cluster/ConnectionPool.ts
-new file mode 100644
-index 0000000..3f993ff
---- /dev/null
-+++ b/test/functional/cluster/ConnectionPool.ts
-@@ -0,0 +1,12 @@
-+import { expect } from "chai";
-+
-+import ConnectionPool from "../../../lib/cluster/ConnectionPool";
-+
-+describe("The cluster connection pool", () => {
-+  describe("when not connected", () => {
-+    it("does not throw when fetching a sample node", () => {
-+      expect(new ConnectionPool({}).getSampleInstance("all")).to.be.undefined;
-+      expect(new ConnectionPool({}).getNodes("all")).to.be.eql([]);
-+    });
-+  });
-+});

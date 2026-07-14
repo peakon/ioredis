@@ -26,7 +26,7 @@ export default class ConnectionPool extends EventEmitter {
 
   constructor(
     private redisOptions: NonNullable<ClusterOptions["redisOptions"]>,
-    private clusterNodeRetryStrategy: ClusterNodeRetryStrategy = null
+    private clusterNodeRetryStrategy: ClusterNodeRetryStrategy = null,
   ) {
     super();
   }
@@ -46,14 +46,16 @@ export default class ConnectionPool extends EventEmitter {
     return this.nodeRecords[role][sampleKey]?.redis;
   }
 
-
   /**
    * Add a master node to the pool
    * @param node
    */
   addMasterNode(node: RedisOptions) {
     const key = getNodeKey(node.options);
-    const redis : Redis = this.createRedisFromOptions(node, node.options.readOnly)
+    const redis: Redis = this.createRedisFromOptions(
+      node,
+      node.options.readOnly,
+    );
 
     //Master nodes aren't read-only
     if (!node.options.readOnly) {
@@ -68,7 +70,6 @@ export default class ConnectionPool extends EventEmitter {
     return false;
   }
 
-
   /**
    * Creates a Redis connection instance from the node options
    * @param node
@@ -76,30 +77,30 @@ export default class ConnectionPool extends EventEmitter {
    */
   createRedisFromOptions(node: RedisOptions, readOnly: boolean) {
     const redis = new Redis(
-        defaults(
-            {
-              // By default, never try to reconnect when a node is lost,
-              // instead, waiting for a `MOVED` error and fetching slots again.
-              // When `clusterNodeRetryStrategy` is set, use it to allow
-              // reconnection (e.g. for replica nodes that restart without
-              // any slot changes).
-              retryStrategy:
-                typeof this.clusterNodeRetryStrategy === "function"
-                  ? this.clusterNodeRetryStrategy
-                  : null,
-              // Offline queue should be enabled so that
-              // we don't need to wait for the `ready` event
-              // before sending commands to the node.
-              enableOfflineQueue: true,
-              readOnly: readOnly,
-            },
-            node,
-            this.redisOptions,
-            { lazyConnect: true }
-        )
+      defaults(
+        {
+          // By default, never try to reconnect when a node is lost,
+          // instead, waiting for a `MOVED` error and fetching slots again.
+          // When `clusterNodeRetryStrategy` is set, use it to allow
+          // reconnection (e.g. for replica nodes that restart without
+          // any slot changes).
+          retryStrategy:
+            typeof this.clusterNodeRetryStrategy === "function"
+              ? this.clusterNodeRetryStrategy
+              : null,
+          // Offline queue should be enabled so that
+          // we don't need to wait for the `ready` event
+          // before sending commands to the node.
+          enableOfflineQueue: true,
+          readOnly: readOnly,
+        },
+        node,
+        this.redisOptions,
+        { lazyConnect: true },
+      ),
     );
 
-    return redis
+    return redis;
   }
 
   /**
@@ -169,10 +170,13 @@ export default class ConnectionPool extends EventEmitter {
       this.findOrCreate(node, node.readOnly);
     });
     Object.keys(this.nodeRecords.all).forEach((key) => {
-      if (!newNodes[key]) {
+      const nodeRecord = this.nodeRecords.all[key];
+      if (!newNodes[key] && nodeRecord) {
         debug("Disconnect %s because the node does not hold any slot", key);
-        this.nodeRecords.all[key].redis.disconnect();
-        this.removeNode(key);
+        nodeRecord.redis.disconnect();
+        if (this.nodeRecords.all[key] === nodeRecord) {
+          this.removeNode(key);
+        }
       }
     });
   }
@@ -203,8 +207,9 @@ export default class ConnectionPool extends EventEmitter {
       delete nodeRecords.master[key];
       delete nodeRecords.slave[key];
 
+      const shouldEmitDrain = !Object.keys(nodeRecords.all).length;
       this.emit("-node", nodeRecord.redis, key);
-      if (!Object.keys(nodeRecords.all).length) {
+      if (shouldEmitDrain && !Object.keys(nodeRecords.all).length) {
         this.emit("drain");
       }
     }
