@@ -7,6 +7,7 @@ const standard_as_callback_1 = require("standard-as-callback");
 const Command_1 = require("../Command");
 const ClusterAllFailedError_1 = require("../errors/ClusterAllFailedError");
 const Redis_1 = require("../Redis");
+const blockingTimeout_1 = require("../redis/blockingTimeout");
 const ScanStream_1 = require("../ScanStream");
 const transaction_1 = require("../transaction");
 const utils_1 = require("../utils");
@@ -45,19 +46,19 @@ class Cluster extends Commander_1.default {
          * @ignore
          */
         this.isCluster = true;
+        this.manuallyClosing = false;
         this.retryAttempts = 0;
         this.delayQueue = new DelayQueue_1.default();
         this.offlineQueue = new Deque();
-        this.isRefreshing = false;
-        this._refreshSlotsCacheCallbacks = [];
+        this.offlineQueueCleanupScheduled = false;
+        this.closedGeneration = -1;
+        this.shardedSubscriberRetryTimers = new Set();
         this._autoPipelines = new Map();
         this._runningAutoPipelines = new Set();
         this._readyDelayedCallbacks = [];
         /**
-         * Every time Cluster#connect() is called, this value will be
-         * auto-incrementing. The purpose of this value is used for
-         * discarding previous connect attampts when creating a new
-         * connection.
+         * Identifies the lifecycle that owns asynchronous cluster work. Starting a
+         * connection or invalidating one during teardown advances the generation.
          */
         this.connectionEpoch = 0;
         events_1.EventEmitter.call(this);
@@ -85,9 +86,7 @@ class Cluster extends Commander_1.default {
         this.connectionPool.on("+node", (redis) => {
             this.emit("+node", redis);
         });
-        this.connectionPool.on("drain", () => {
-            this.setStatus("close");
-        });
+        this.connectionPool.on("drain", (generation) => this.handlePoolDrain(generation));
         this.connectionPool.on("nodeError", (error, key) => {
             this.emit("node error", error, key);
         });
@@ -107,161 +106,372 @@ class Cluster extends Commander_1.default {
         }
     }
     /**
-     * Connect to a cluster
+     * Connect to a cluster.
+     *
+     * Concurrent calls share the active connection attempt. Calling this method
+     * after the cluster is ready rejects with an already-connected error.
      */
     connect() {
-        return new Promise((resolve, reject) => {
-            if (this.status === "connecting" ||
-                this.status === "connect" ||
-                this.status === "ready") {
-                reject(new Error("Redis is already connecting/connected"));
-                return;
-            }
-            const epoch = ++this.connectionEpoch;
-            this.setStatus("connecting");
-            this.resolveStartupNodeHostnames()
-                .then((nodes) => {
-                if (this.connectionEpoch !== epoch) {
-                    debug("discard connecting after resolving startup nodes because epoch not match: %d != %d", epoch, this.connectionEpoch);
-                    reject(new redis_errors_1.RedisError("Connection is discarded because a new connection is made"));
-                    return;
-                }
-                if (this.status !== "connecting") {
-                    debug("discard connecting after resolving startup nodes because the status changed to %s", this.status);
-                    reject(new redis_errors_1.RedisError("Connection is aborted"));
-                    return;
-                }
-                this.connectionPool.reset(nodes);
-                if (this.options.shardedSubscribers) {
-                    this.shardedSubscribers
-                        .reset(this.slots, this.connectionPool.getNodes("all"))
-                        .catch((err) => {
-                        // TODO should we emit an error event here?
-                        debug("Error while starting subscribers: %s", err);
-                    });
-                }
-                const readyHandler = () => {
-                    this.setStatus("ready");
-                    this.retryAttempts = 0;
-                    this.executeOfflineCommands();
-                    this.resetNodesRefreshInterval();
-                    resolve();
+        if (this.activeTeardown && !this.activeTeardown.settled) {
+            // disconnect() tears down synchronously. This branch coordinates with
+            // asynchronous quit() and connect() calls made re-entrantly by teardown
+            // listeners.
+            const teardown = this.activeTeardown;
+            if (!this.queuedConnect || this.queuedConnect.teardown !== teardown) {
+                const queuedConnect = {
+                    teardown,
+                    promise: undefined,
                 };
-                let closeListener = undefined;
-                const refreshListener = () => {
-                    this.invokeReadyDelayedCallbacks(undefined);
-                    this.removeListener("close", closeListener);
-                    this.manuallyClosing = false;
-                    this.setStatus("connect");
-                    if (this.options.enableReadyCheck) {
-                        this.readyCheck((err, fail) => {
-                            if (err || fail) {
-                                debug("Ready check failed (%s). Reconnecting...", err || fail);
-                                if (this.status === "connect") {
-                                    this.disconnect(true);
-                                }
-                            }
-                            else {
-                                readyHandler();
-                            }
-                        });
+                queuedConnect.promise = teardown.promise.then(() => {
+                    if (this.queuedConnect === queuedConnect) {
+                        this.queuedConnect = undefined;
                     }
-                    else {
-                        readyHandler();
+                    if (this.connectionEpoch !== teardown.generation ||
+                        (this.activeTeardown &&
+                            this.activeTeardown !== teardown &&
+                            !this.activeTeardown.settled)) {
+                        throw new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG);
                     }
-                };
-                closeListener = () => {
-                    const error = new Error("None of startup nodes is available");
-                    this.removeListener("refresh", refreshListener);
-                    this.invokeReadyDelayedCallbacks(error);
-                    reject(error);
-                };
-                this.once("refresh", refreshListener);
-                this.once("close", closeListener);
-                this.once("close", this.handleCloseEvent.bind(this));
-                this.refreshSlotsCache((err) => {
-                    if (err && err.message === ClusterAllFailedError_1.default.defaultMessage) {
-                        Redis_1.default.prototype.silentEmit.call(this, "error", err);
-                        this.connectionPool.reset([]);
-                    }
+                    return this.connect();
                 });
-                this.subscriber.start();
-                if (this.options.shardedSubscribers) {
-                    this.shardedSubscribers.start().catch((err) => {
-                        // TODO should we emit an error event here?
-                        debug("Error while starting subscribers: %s", err);
-                    });
-                }
-            })
-                .catch((err) => {
-                this.setStatus("close");
-                this.handleCloseEvent(err);
-                this.invokeReadyDelayedCallbacks(err);
-                reject(err);
-            });
+                this.queuedConnect = queuedConnect;
+            }
+            return this.queuedConnect.promise;
+        }
+        if (this.activeConnect &&
+            this.activeConnect.generation === this.connectionEpoch &&
+            (this.status === "connecting" || this.status === "connect")) {
+            return this.activeConnect.promise;
+        }
+        if (this.status === "ready") {
+            return Promise.reject(new Error("Redis is already connecting/connected"));
+        }
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+        const generation = ++this.connectionEpoch;
+        this.manuallyClosing = false;
+        const canceledConnection = this.cancelActiveConnection(new redis_errors_1.RedisError("Connection is discarded because a new connection is made"));
+        this.cancelRefresh(new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+        if (canceledConnection) {
+            this.invokeReadyDelayedCallbacks(new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+        }
+        let resolve;
+        let reject;
+        const promise = new Promise((resolvePromise, rejectPromise) => {
+            resolve = resolvePromise;
+            reject = rejectPromise;
         });
+        const operation = {
+            generation,
+            promise,
+            resolve,
+            reject,
+            settled: false,
+        };
+        this.activeConnect = operation;
+        this.setStatus("connecting", generation);
+        this.startConnection(operation);
+        return promise;
     }
     /**
      * Disconnect from every node in the cluster.
      */
     disconnect(reconnect = false) {
-        const status = this.status;
-        this.setStatus("disconnecting");
-        if (!reconnect) {
-            this.manuallyClosing = true;
+        if (!reconnect && this.status === "end") {
+            return;
         }
-        if (this.reconnectTimeout && !reconnect) {
-            clearTimeout(this.reconnectTimeout);
-            this.reconnectTimeout = null;
-            debug("Canceled reconnecting attempts");
+        if (reconnect &&
+            (this.status === "reconnecting" || this.status === "disconnecting")) {
+            return;
         }
+        this.teardown(reconnect);
+    }
+    startConnection(operation) {
+        const { generation } = operation;
+        this.resolveStartupNodeHostnames()
+            .then((nodes) => {
+            if (!this.isConnectionOwner(operation)) {
+                return;
+            }
+            this.connectionPool.reset(nodes, generation);
+            if (!this.isConnectionOwner(operation)) {
+                return;
+            }
+            if (this.options.shardedSubscribers) {
+                this.shardedSubscribers
+                    .reset(this.slots, this.connectionPool.getNodes("all"))
+                    .catch((err) => {
+                    if (this.connectionEpoch === generation) {
+                        debug("Error while starting subscribers: %s", err);
+                    }
+                });
+            }
+            this.refreshSlotsCacheForGeneration((err) => {
+                if (!this.isConnectionOwner(operation)) {
+                    return;
+                }
+                if (err) {
+                    if (err.message === ClusterAllFailedError_1.default.defaultMessage) {
+                        Redis_1.default.prototype.silentEmit.call(this, "error", err);
+                        if (!this.isConnectionOwner(operation)) {
+                            return;
+                        }
+                        this.failConnection(operation, new Error("None of startup nodes is available"), err);
+                        if (generation === this.connectionEpoch) {
+                            this.connectionPool.reset([], generation);
+                        }
+                    }
+                    else {
+                        this.failConnection(operation, err, err);
+                    }
+                    return;
+                }
+                this.invokeReadyDelayedCallbacks(undefined);
+                this.setStatus("connect", generation);
+                if (this.options.enableReadyCheck) {
+                    this.readyCheck((readyError, fail) => {
+                        if (!this.isConnectionOwner(operation)) {
+                            return;
+                        }
+                        if (readyError || fail) {
+                            debug("Ready check failed (%s). Reconnecting...", readyError || fail);
+                            this.forceReconnect(generation, readyError || new Error(`Cluster state is ${fail}`));
+                        }
+                        else {
+                            this.completeConnection(operation);
+                        }
+                    });
+                }
+                else {
+                    this.completeConnection(operation);
+                }
+            }, generation);
+            if (!this.isConnectionOwner(operation)) {
+                return;
+            }
+            this.subscriber.start();
+            if (this.options.shardedSubscribers) {
+                this.shardedSubscribers.start().catch((err) => {
+                    if (this.connectionEpoch === generation) {
+                        debug("Error while starting subscribers: %s", err);
+                    }
+                });
+            }
+        })
+            .catch((err) => {
+            if (this.isConnectionOwner(operation)) {
+                this.failConnection(operation, err, err);
+            }
+        });
+    }
+    completeConnection(operation) {
+        if (!this.isConnectionOwner(operation)) {
+            return;
+        }
+        this.setStatus("ready", operation.generation);
+        this.retryAttempts = 0;
+        this.executeOfflineCommands();
+        this.resetNodesRefreshInterval(operation.generation);
+        this.settleConnection(operation, undefined);
+    }
+    failConnection(operation, error, closeReason) {
+        if (!this.isConnectionOwner(operation)) {
+            return;
+        }
+        this.settleConnection(operation, error);
+        this.invokeReadyDelayedCallbacks(error);
+        this.finishClose(operation.generation, closeReason);
+    }
+    settleConnection(operation, error) {
+        if (operation.settled) {
+            return;
+        }
+        operation.settled = true;
+        if (this.activeConnect === operation) {
+            this.activeConnect = undefined;
+        }
+        if (error) {
+            operation.reject(error);
+        }
+        else {
+            operation.resolve();
+        }
+    }
+    isConnectionOwner(operation) {
+        return (!operation.settled &&
+            this.activeConnect === operation &&
+            operation.generation === this.connectionEpoch);
+    }
+    cancelActiveConnection(error) {
+        if (this.activeConnect) {
+            this.settleConnection(this.activeConnect, error);
+            return true;
+        }
+        return false;
+    }
+    cancelLifecycleWork(error) {
         this.clearNodesRefreshInterval();
+        this.clearShardedSubscriberRetryTimers();
+        this.delayQueue.flush();
+        this.cancelActiveConnection(error);
+        this.cancelRefresh(error, true);
+        this.invokeReadyDelayedCallbacks(error);
         this.subscriber.stop();
         if (this.options.shardedSubscribers) {
             this.shardedSubscribers.stop();
         }
-        if (status === "wait") {
-            this.setStatus("close");
-            this.handleCloseEvent();
+    }
+    teardown(reconnect, reason, connectionError = new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG)) {
+        const previousStatus = this.status;
+        const generation = ++this.connectionEpoch;
+        const operation = this.beginTeardown(generation);
+        this.manuallyClosing = !reconnect;
+        this.setStatus("disconnecting", generation);
+        try {
+            if (this.reconnectTimeout) {
+                clearTimeout(this.reconnectTimeout);
+                this.reconnectTimeout = null;
+                debug("Canceled reconnecting attempts");
+            }
+            this.cancelLifecycleWork(connectionError);
+            this.connectionPool.reset([], generation);
+            if (!reconnect &&
+                (previousStatus === "close" ||
+                    previousStatus === "reconnecting" ||
+                    previousStatus === "end")) {
+                this.closedGeneration = generation;
+                this.handleCloseEvent(reason, generation);
+            }
+            else {
+                this.finishClose(generation, reason);
+            }
         }
-        else {
-            this.connectionPool.reset([]);
+        finally {
+            this.settleTeardown(operation);
         }
+    }
+    beginTeardown(generation) {
+        let resolve;
+        const promise = new Promise((resolvePromise) => {
+            resolve = resolvePromise;
+        });
+        const operation = { generation, promise, resolve, settled: false };
+        this.activeTeardown = operation;
+        return operation;
+    }
+    settleTeardown(operation) {
+        if (operation.settled) {
+            return;
+        }
+        operation.settled = true;
+        if (this.activeTeardown === operation) {
+            this.activeTeardown = undefined;
+        }
+        operation.resolve();
+    }
+    forceReconnect(generation, reason) {
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
+        this.teardown(true, reason, new Error("None of startup nodes is available"));
+    }
+    handlePoolDrain(generation) {
+        if (generation !== undefined && generation !== this.connectionEpoch) {
+            return;
+        }
+        generation !== null && generation !== void 0 ? generation : (generation = this.connectionEpoch);
+        if (this.activeTeardown &&
+            !this.activeTeardown.settled &&
+            this.activeTeardown.generation === generation) {
+            return;
+        }
+        if (this.status === "close" ||
+            this.status === "end" ||
+            this.status === "reconnecting") {
+            return;
+        }
+        const connectionError = new Error("None of startup nodes is available");
+        if (this.activeConnect &&
+            (this.status === "connecting" || this.status === "connect")) {
+            this.settleConnection(this.activeConnect, connectionError);
+            this.invokeReadyDelayedCallbacks(connectionError);
+        }
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
+        this.clearShardedSubscriberRetryTimers();
+        this.cancelRefresh(new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+        this.clearNodesRefreshInterval();
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
+        this.delayQueue.flush();
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
+        this.subscriber.stop();
+        if (this.options.shardedSubscribers) {
+            this.shardedSubscribers.stop();
+        }
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
+        this.finishClose(generation);
+    }
+    clearShardedSubscriberRetryTimers() {
+        for (const timer of this.shardedSubscriberRetryTimers) {
+            clearTimeout(timer);
+        }
+        this.shardedSubscriberRetryTimers.clear();
     }
     /**
      * Quit the cluster gracefully.
      */
     quit(callback) {
-        const status = this.status;
-        this.setStatus("disconnecting");
+        const generation = ++this.connectionEpoch;
+        const operation = this.beginTeardown(generation);
         this.manuallyClosing = true;
+        this.setStatus("disconnecting", generation);
         if (this.reconnectTimeout) {
             clearTimeout(this.reconnectTimeout);
             this.reconnectTimeout = null;
         }
-        this.clearNodesRefreshInterval();
-        this.subscriber.stop();
-        if (this.options.shardedSubscribers) {
-            this.shardedSubscribers.stop();
-        }
-        if (status === "wait") {
-            const ret = (0, standard_as_callback_1.default)(Promise.resolve("OK"), callback);
+        const error = new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG);
+        this.cancelLifecycleWork(error);
+        const nodes = this.nodes();
+        if (nodes.length === 0) {
+            const result = Promise.resolve("OK");
             // use setImmediate to make sure "close" event
             // being emitted after quit() is returned
-            setImmediate(function () {
-                this.setStatus("close");
-                this.handleCloseEvent();
-            }.bind(this));
-            return ret;
+            setImmediate(() => {
+                this.finishClose(generation);
+                this.settleTeardown(operation);
+            });
+            return (0, standard_as_callback_1.default)(result, callback);
         }
-        return (0, standard_as_callback_1.default)(Promise.all(this.nodes().map((node) => node.quit().catch((err) => {
+        const result = Promise.all(nodes.map((node) => node.quit().catch((err) => {
             // Ignore the error caused by disconnecting since
             // we're disconnecting...
             if (err.message === utils_1.CONNECTION_CLOSED_ERROR_MSG) {
                 return "OK";
             }
             throw err;
-        }))).then(() => "OK"), callback);
+        })))
+            .then(() => "OK")
+            .finally(() => {
+            try {
+                if (generation === this.connectionEpoch) {
+                    this.connectionPool.reset([], generation);
+                    this.finishClose(generation);
+                }
+            }
+            finally {
+                this.settleTeardown(operation);
+            }
+        });
+        return (0, standard_as_callback_1.default)(result, callback);
     }
     /**
      * Create a new instance with the same startup nodes and options as the current one.
@@ -314,51 +524,109 @@ class Cluster extends Commander_1.default {
      * @ignore
      */
     refreshSlotsCache(callback) {
-        if (callback) {
-            this._refreshSlotsCacheCallbacks.push(callback);
-        }
-        if (this.isRefreshing) {
+        this.refreshSlotsCacheForGeneration(callback, this.connectionEpoch);
+    }
+    refreshSlotsCacheForGeneration(callback, generation) {
+        if (!this.isRefreshAllowed(generation)) {
+            if (callback) {
+                process.nextTick(callback, new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+            }
             return;
         }
-        this.isRefreshing = true;
-        const _this = this;
-        const wrapper = (error) => {
-            this.isRefreshing = false;
-            for (const callback of this._refreshSlotsCacheCallbacks) {
-                callback(error);
+        if (this.activeRefresh &&
+            !this.activeRefresh.settled &&
+            this.activeRefresh.generation === generation) {
+            if (callback) {
+                this.activeRefresh.callbacks.push(callback);
             }
-            this._refreshSlotsCacheCallbacks = [];
+            return;
+        }
+        const operation = {
+            generation,
+            callbacks: callback ? [callback] : [],
+            settled: false,
         };
+        this.activeRefresh = operation;
         const nodes = (0, utils_1.shuffle)(this.connectionPool.getNodes());
         let lastNodeError = null;
-        function tryNode(index) {
+        const tryNode = (index) => {
+            if (!this.isRefreshOwner(operation)) {
+                return;
+            }
             if (index === nodes.length) {
-                const error = new ClusterAllFailedError_1.default(ClusterAllFailedError_1.default.defaultMessage, lastNodeError);
-                return wrapper(error);
+                this.settleRefresh(operation, new ClusterAllFailedError_1.default(ClusterAllFailedError_1.default.defaultMessage, lastNodeError));
+                return;
             }
             const node = nodes[index];
             const key = `${node.options.host}:${node.options.port}`;
             debug("getting slot cache from %s", key);
-            _this.getInfoFromNode(node, function (err) {
-                switch (_this.status) {
-                    case "close":
-                    case "end":
-                        return wrapper(new Error("Cluster is disconnected."));
-                    case "disconnecting":
-                        return wrapper(new Error("Cluster is disconnecting."));
+            this.getInfoFromNode(node, operation, (err) => {
+                if (!this.isRefreshOwner(operation)) {
+                    return;
                 }
                 if (err) {
-                    _this.emit("node error", err, key);
+                    this.emit("node error", err, key);
                     lastNodeError = err;
                     tryNode(index + 1);
                 }
                 else {
-                    _this.emit("refresh");
-                    wrapper();
+                    this.emit("refresh");
+                    this.settleRefresh(operation);
                 }
             });
-        }
+        };
         tryNode(0);
+    }
+    isRefreshOwner(operation) {
+        return (!operation.settled &&
+            this.activeRefresh === operation &&
+            this.isRefreshAllowed(operation.generation));
+    }
+    isRefreshAllowed(generation) {
+        // Slot state belongs to an active connection lifecycle and must not be
+        // refreshed while waiting, reconnecting, tearing down, or closed.
+        return (generation === this.connectionEpoch &&
+            (this.status === "connecting" ||
+                this.status === "connect" ||
+                this.status === "ready"));
+    }
+    settleRefresh(operation, error, deferCallbacks = false) {
+        if (operation.settled) {
+            return;
+        }
+        operation.settled = true;
+        if (this.activeRefresh === operation) {
+            this.activeRefresh = undefined;
+        }
+        const callbacks = operation.callbacks;
+        operation.callbacks = [];
+        if (deferCallbacks) {
+            const scheduleCallbacks = () => {
+                for (const callback of callbacks) {
+                    process.nextTick(callback, error);
+                }
+            };
+            if (this.activeTeardown && !this.activeTeardown.settled) {
+                this.activeTeardown.promise.then(scheduleCallbacks);
+            }
+            else {
+                scheduleCallbacks();
+            }
+            return;
+        }
+        for (const callback of callbacks) {
+            callback(error);
+        }
+    }
+    cancelRefresh(error, deferCallbacks = false) {
+        var _a;
+        const operation = this.activeRefresh;
+        if (!operation || operation.settled) {
+            return;
+        }
+        (_a = operation.connection) === null || _a === void 0 ? void 0 : _a.disconnect();
+        operation.connection = undefined;
+        this.settleRefresh(operation, error, deferCallbacks);
     }
     /**
      * @ignore
@@ -424,6 +692,9 @@ class Cluster extends Commander_1.default {
         }
         tryConnection();
         function tryConnection(random, asking) {
+            if (command.isResolved) {
+                return;
+            }
             if (_this.status === "end") {
                 command.reject(new redis_errors_1.AbortError("Cluster is ended."));
                 return;
@@ -519,11 +790,19 @@ class Cluster extends Commander_1.default {
                 }
             }
             if (!redis && _this.options.enableOfflineQueue) {
-                _this.offlineQueue.push({
+                const offlineItem = {
                     command: command,
                     stream: stream,
                     node: node,
-                });
+                };
+                _this.offlineQueue.push(offlineItem);
+                const blockingTimeout = Command_1.default.checkFlag("BLOCKING_COMMANDS", command.name)
+                    ? (0, blockingTimeout_1.getConfiguredBlockingTimeout)(_this.options.redisOptions)
+                    : undefined;
+                if (blockingTimeout !== undefined) {
+                    command.setBlockingTimeout(blockingTimeout);
+                    command.promise.then(() => _this.scheduleOfflineQueueCleanup(), utils_1.noop);
+                }
                 return;
             }
             if (!redis) {
@@ -606,22 +885,58 @@ class Cluster extends Commander_1.default {
     resetOfflineQueue() {
         this.offlineQueue = new Deque();
     }
+    scheduleOfflineQueueCleanup() {
+        if (this.offlineQueueCleanupScheduled || !this.offlineQueue.length) {
+            return;
+        }
+        this.offlineQueueCleanupScheduled = true;
+        setImmediate(() => {
+            this.offlineQueueCleanupScheduled = false;
+            if (!this.offlineQueue.length) {
+                return;
+            }
+            const offlineQueue = this.offlineQueue;
+            this.resetOfflineQueue();
+            let item;
+            while ((item = offlineQueue.shift())) {
+                if (item.command.isResolved) {
+                    this.discardOfflineQueueItem(item);
+                }
+                else {
+                    this.offlineQueue.push(item);
+                }
+            }
+        });
+    }
+    discardOfflineQueueItem(item) {
+        var _a, _b;
+        if (item.stream && "isPipeline" in item.stream && item.stream.isPipeline) {
+            (_b = (_a = item.stream).writeSkipped) === null || _b === void 0 ? void 0 : _b.call(_a);
+        }
+    }
     clearNodesRefreshInterval() {
         if (this.slotsTimer) {
             clearTimeout(this.slotsTimer);
             this.slotsTimer = null;
         }
     }
-    resetNodesRefreshInterval() {
+    resetNodesRefreshInterval(generation = this.connectionEpoch) {
         if (this.slotsTimer || !this.options.slotsRefreshInterval) {
             return;
         }
         const nextRound = () => {
+            if (generation !== this.connectionEpoch || this.status !== "ready") {
+                return;
+            }
             this.slotsTimer = setTimeout(() => {
+                this.slotsTimer = null;
+                if (generation !== this.connectionEpoch || this.status !== "ready") {
+                    return;
+                }
                 debug('refreshing slot caches... (triggered by "slotsRefreshInterval" option)');
-                this.refreshSlotsCache(() => {
+                this.refreshSlotsCacheForGeneration(() => {
                     nextRound();
-                });
+                }, generation);
             }, this.options.slotsRefreshInterval);
         };
         nextRound();
@@ -629,18 +944,32 @@ class Cluster extends Commander_1.default {
     /**
      * Change cluster instance's status
      */
-    setStatus(status) {
+    setStatus(status, generation = this.connectionEpoch) {
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
         debug("status: %s -> %s", this.status || "[empty]", status);
         this.status = status;
         process.nextTick(() => {
             this.emit(status);
         });
     }
+    finishClose(generation, reason) {
+        if (generation !== this.connectionEpoch ||
+            this.closedGeneration === generation) {
+            return;
+        }
+        this.closedGeneration = generation;
+        this.setStatus("close", generation);
+        this.handleCloseEvent(reason, generation);
+    }
     /**
      * Called when closed to check whether a reconnection should be made
      */
-    handleCloseEvent(reason) {
-        var _a;
+    handleCloseEvent(reason, generation = this.connectionEpoch) {
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
         if (reason) {
             debug("closed because %s", reason);
         }
@@ -649,21 +978,33 @@ class Cluster extends Commander_1.default {
             typeof this.options.clusterRetryStrategy === "function") {
             retryDelay = this.options.clusterRetryStrategy.call(this, ++this.retryAttempts, reason);
         }
+        if (generation !== this.connectionEpoch) {
+            return;
+        }
         if (typeof retryDelay === "number") {
-            this.setStatus("reconnecting");
-            this.reconnectTimeout = setTimeout(() => {
-                this.reconnectTimeout = null;
+            this.setStatus("reconnecting", generation);
+            const reconnectTimeout = setTimeout(() => {
+                if (this.reconnectTimeout === reconnectTimeout) {
+                    this.reconnectTimeout = null;
+                }
+                if (generation !== this.connectionEpoch ||
+                    this.status !== "reconnecting" ||
+                    this.manuallyClosing) {
+                    return;
+                }
                 debug("Cluster is disconnected. Retrying after %dms", retryDelay);
                 this.connect().catch(function (err) {
                     debug("Got error %s when reconnecting. Ignoring...", err);
                 });
             }, retryDelay);
+            this.reconnectTimeout = reconnectTimeout;
         }
         else {
+            this.clearShardedSubscriberRetryTimers();
             if (this.options.shardedSubscribers) {
-                (_a = this.subscriberGroupEmitter) === null || _a === void 0 ? void 0 : _a.removeAllListeners();
+                this.shardedSubscribers.stop();
             }
-            this.setStatus("end");
+            this.setStatus("end", generation);
             this.flushQueue(new Error("None of startup nodes is available"));
         }
     }
@@ -683,14 +1024,17 @@ class Cluster extends Commander_1.default {
             this.resetOfflineQueue();
             let item;
             while ((item = offlineQueue.shift())) {
-                this.sendCommand(item.command, item.stream, item.node);
+                if (item.command.isResolved) {
+                    this.discardOfflineQueueItem(item);
+                }
+                else {
+                    this.sendCommand(item.command, item.stream, item.node);
+                }
             }
         }
     }
     natMapper(nodeKey) {
-        const key = typeof nodeKey === "string"
-            ? nodeKey
-            : `${nodeKey.host}:${nodeKey.port}`;
+        const key = typeof nodeKey === "string" ? nodeKey : `${nodeKey.host}:${nodeKey.port}`;
         let mapped = null;
         if (this.options.natMap && typeof this.options.natMap === "function") {
             mapped = this.options.natMap(key);
@@ -706,7 +1050,7 @@ class Cluster extends Commander_1.default {
             ? (0, util_1.nodeKeyToRedisOptions)(nodeKey)
             : nodeKey;
     }
-    getInfoFromNode(redis, callback) {
+    getInfoFromNode(redis, operation, callback) {
         if (!redis) {
             return callback(new Error("Node is disconnected"));
         }
@@ -722,19 +1066,19 @@ class Cluster extends Commander_1.default {
         // Ignore error events since we will handle
         // exceptions for the CLUSTER SLOTS command.
         duplicatedConnection.on("error", utils_1.noop);
+        operation.connection = duplicatedConnection;
         duplicatedConnection.cluster("SLOTS", (0, utils_1.timeout)((err, result) => {
+            operation.connection = undefined;
             duplicatedConnection.disconnect();
             if (err) {
                 debug("error encountered running CLUSTER.SLOTS: %s", err);
                 return callback(err);
             }
-            if (this.status === "disconnecting" ||
-                this.status === "close" ||
-                this.status === "end") {
-                debug("ignore CLUSTER.SLOTS results (count: %d) since cluster status is %s", result.length, this.status);
-                callback();
-                return;
+            if (!this.isRefreshOwner(operation)) {
+                debug("ignore CLUSTER.SLOTS results (count: %d) from lifecycle generation %d", result.length, operation.generation);
+                return callback(new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
             }
+            const slots = this.slots.slice();
             const nodes = [];
             debug("cluster slots result count: %d", result.length);
             for (let i = 0; i < result.length; ++i) {
@@ -756,30 +1100,38 @@ class Cluster extends Commander_1.default {
                 }
                 debug("cluster slots result [%d]: slots %d~%d served by %s", i, slotRangeStart, slotRangeEnd, keys);
                 for (let slot = slotRangeStart; slot <= slotRangeEnd; slot++) {
-                    this.slots[slot] = keys;
+                    slots[slot] = keys;
                 }
             }
             // Assign to each node keys a numeric value to make autopipeline comparison faster.
-            this._groupsIds = Object.create(null);
+            const groupsIds = Object.create(null);
+            const groupsBySlot = Array(16384);
             let j = 0;
             for (let i = 0; i < 16384; i++) {
-                const target = (this.slots[i] || []).join(";");
+                const target = (slots[i] || []).join(";");
                 if (!target.length) {
-                    this._groupsBySlot[i] = undefined;
+                    groupsBySlot[i] = undefined;
                     continue;
                 }
-                if (!this._groupsIds[target]) {
-                    this._groupsIds[target] = ++j;
+                if (!groupsIds[target]) {
+                    groupsIds[target] = ++j;
                 }
-                this._groupsBySlot[i] = this._groupsIds[target];
+                groupsBySlot[i] = groupsIds[target];
             }
-            this.connectionPool.reset(nodes);
-            if (this.options.shardedSubscribers) {
+            if (!this.isRefreshOwner(operation)) {
+                return callback(new redis_errors_1.RedisError(utils_1.CONNECTION_CLOSED_ERROR_MSG));
+            }
+            this.slots = slots;
+            this._groupsIds = groupsIds;
+            this._groupsBySlot = groupsBySlot;
+            this.connectionPool.reset(nodes, operation.generation);
+            if (this.options.shardedSubscribers && this.isRefreshOwner(operation)) {
                 this.shardedSubscribers
                     .reset(this.slots, this.connectionPool.getNodes("all"))
                     .catch((err) => {
-                    // TODO should we emit an error event here?
-                    debug("Error while starting subscribers: %s", err);
+                    if (this.connectionEpoch === operation.generation) {
+                        debug("Error while starting subscribers: %s", err);
+                    }
                 });
             }
             callback();
@@ -898,28 +1250,39 @@ class Cluster extends Commander_1.default {
     createShardedSubscriberGroup() {
         this.subscriberGroupEmitter = new events_1.EventEmitter();
         this.shardedSubscribers = new ClusterSubscriberGroup_1.default(this.subscriberGroupEmitter, this.options);
-        // Error handler used only for sharded-subscriber-triggered slots cache refreshes.
-        // Normal (non-subscriber) connections are created with lazyConnect: true and can
-        // become zombied. For sharded subscribers, a ClusterAllFailedError means
-        // we have lost all nodes from the subscriber perspective and must tear down.
-        const refreshSlotsCacheCallback = (err) => {
-            // Disconnect only when refreshing the slots cache fails with ClusterAllFailedError
-            if (err instanceof ClusterAllFailedError_1.default) {
-                this.disconnect(true);
+        const refreshShardedSubscriberSlots = (generation) => {
+            if (generation !== this.connectionEpoch ||
+                this.status === "disconnecting" ||
+                this.status === "close" ||
+                this.status === "end") {
+                return;
             }
+            this.refreshSlotsCacheForGeneration((err) => {
+                if (generation === this.connectionEpoch &&
+                    err instanceof ClusterAllFailedError_1.default) {
+                    this.forceReconnect(generation, err);
+                }
+            }, generation);
         };
         this.subscriberGroupEmitter.on("-node", (redis, nodeKey) => {
+            const generation = this.connectionEpoch;
             this.emit("-node", redis, nodeKey);
-            this.refreshSlotsCache(refreshSlotsCacheCallback);
+            refreshShardedSubscriberSlots(generation);
         });
         this.subscriberGroupEmitter.on("subscriberConnectFailed", ({ delay, error }) => {
+            const generation = this.connectionEpoch;
             this.emit("error", error);
-            setTimeout(() => {
-                this.refreshSlotsCache(refreshSlotsCacheCallback);
+            if (generation !== this.connectionEpoch) {
+                return;
+            }
+            const timer = setTimeout(() => {
+                this.shardedSubscriberRetryTimers.delete(timer);
+                refreshShardedSubscriberSlots(generation);
             }, delay);
+            this.shardedSubscriberRetryTimers.add(timer);
         });
         this.subscriberGroupEmitter.on("moved", () => {
-            this.refreshSlotsCache(refreshSlotsCacheCallback);
+            refreshShardedSubscriberSlots(this.connectionEpoch);
         });
         this.subscriberGroupEmitter.on("-subscriber", () => {
             this.emit("-subscriber");

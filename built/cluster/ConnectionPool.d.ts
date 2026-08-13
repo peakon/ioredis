@@ -8,6 +8,7 @@ export default class ConnectionPool extends EventEmitter {
     private clusterNodeRetryStrategy;
     private nodeRecords;
     private specifiedOptions;
+    private generation?;
     constructor(redisOptions: NonNullable<ClusterOptions["redisOptions"]>, clusterNodeRetryStrategy?: ClusterNodeRetryStrategy);
     getNodes(role?: NodeRole): Redis[];
     getInstanceByKey(key: NodeKey): Redis;
@@ -31,7 +32,7 @@ export default class ConnectionPool extends EventEmitter {
      * Reset the pool with a set of nodes.
      * The old node will be removed.
      */
-    reset(nodes: RedisOptions[]): void;
+    reset(nodes: RedisOptions[], generation?: number): void;
     private createNodeRecord;
     /**
      * Remove a node from the pool.

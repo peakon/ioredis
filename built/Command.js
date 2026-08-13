@@ -38,6 +38,7 @@ class Command {
         this.name = name;
         this.inTransaction = false;
         this.isTraced = false;
+        // True only after fulfillment; rejection deliberately leaves this false.
         this.isResolved = false;
         this.transformed = false;
         this.replyEncoding = options.replyEncoding;
@@ -273,6 +274,7 @@ class Command {
         }
     }
     initPromise() {
+        this.isResolved = false;
         const promise = new Promise((resolve, reject) => {
             if (!this.transformed) {
                 this.transformed = true;

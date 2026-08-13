@@ -76,6 +76,7 @@ class ClusterSubscriber {
     stop() {
         this.started = false;
         if (this.subscriber) {
+            this.subscriber.off("end", this.onSubscriberEnd);
             this.subscriber.disconnect();
             this.subscriber = null;
         }
@@ -195,10 +196,7 @@ class ClusterSubscriber {
         else {
             this.lastActiveSubscriber = this.subscriber;
         }
-        for (const event of [
-            "message",
-            "messageBuffer",
-        ]) {
+        for (const event of ["message", "messageBuffer"]) {
             this.subscriber.on(event, (arg1, arg2) => {
                 this.emitter.emit(event, arg1, arg2);
             });
@@ -209,10 +207,7 @@ class ClusterSubscriber {
             });
         }
         if (this.isSharded == true) {
-            for (const event of [
-                "smessage",
-                "smessageBuffer",
-            ]) {
+            for (const event of ["smessage", "smessageBuffer"]) {
                 this.subscriber.on(event, (arg1, arg2) => {
                     this.emitter.emit(event, arg1, arg2);
                 });

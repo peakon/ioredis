@@ -21,6 +21,7 @@ export default class ClusterSubscriberGroup {
     private failedAttemptsByNode;
     private isResetting;
     private pendingReset;
+    private lifecycleGeneration;
     private static readonly MAX_RETRY_ATTEMPTS;
     private static readonly MAX_BACKOFF_MS;
     private static readonly BASE_BACKOFF_MS;
@@ -90,6 +91,7 @@ export default class ClusterSubscriberGroup {
      * @returns true if any subscribers need to be recreated
      */
     private hasUnhealthySubscribers;
+    private startSubscriber;
     /**
      * Handles failed subscriber connections by emitting an event to refresh the slots cache
      * after a backoff period.

@@ -7,6 +7,7 @@ const cluster_1 = require("./cluster");
 const Command_1 = require("./Command");
 const connectors_1 = require("./connectors");
 const SentinelConnector_1 = require("./connectors/SentinelConnector");
+const blockingTimeout_1 = require("./redis/blockingTimeout");
 const eventHandler = require("./redis/event_handler");
 const RedisOptions_1 = require("./redis/RedisOptions");
 const ScanStream_1 = require("./ScanStream");
@@ -352,7 +353,7 @@ class Redis extends Commander_1.default {
         if (typeof this.options.commandTimeout === "number") {
             command.setTimeout(this.options.commandTimeout);
         }
-        const blockingTimeout = this.getBlockingTimeoutInMs(command);
+        const blockingTimeout = (0, blockingTimeout_1.default)(command, this.options);
         let writable = this.status === "ready" ||
             (!stream &&
                 this.status === "connect" &&
@@ -394,7 +395,7 @@ class Redis extends Commander_1.default {
             // only when blockingTimeout is configured. Without this option, queued
             // blocking commands may wait indefinitely on a dead connection.
             if (Command_1.default.checkFlag("BLOCKING_COMMANDS", command.name)) {
-                const offlineTimeout = this.getConfiguredBlockingTimeout();
+                const offlineTimeout = (0, blockingTimeout_1.getConfiguredBlockingTimeout)(this.options);
                 if (offlineTimeout !== undefined) {
                     command.setBlockingTimeout(offlineTimeout);
                 }
@@ -449,39 +450,6 @@ class Redis extends Commander_1.default {
         // we don't emit duplicate trace events.
         command.isTraced = true;
         return (0, tracing_1.traceCommand)(() => command.promise, () => this._buildCommandContext(command));
-    }
-    getBlockingTimeoutInMs(command) {
-        var _a;
-        if (!Command_1.default.checkFlag("BLOCKING_COMMANDS", command.name)) {
-            return undefined;
-        }
-        // Feature is opt-in: only enabled when blockingTimeout is set to a positive number
-        const configuredTimeout = this.getConfiguredBlockingTimeout();
-        if (configuredTimeout === undefined) {
-            return undefined;
-        }
-        const timeout = command.extractBlockingTimeout();
-        if (typeof timeout === "number") {
-            if (timeout > 0) {
-                // Finite timeout from command args - add grace period
-                return (timeout +
-                    ((_a = this.options.blockingTimeoutGrace) !== null && _a !== void 0 ? _a : RedisOptions_1.DEFAULT_REDIS_OPTIONS.blockingTimeoutGrace));
-            }
-            // Command has timeout=0 (block forever), use blockingTimeout option as safety net
-            return configuredTimeout;
-        }
-        if (timeout === null) {
-            // No BLOCK option found (e.g., XREAD without BLOCK), use blockingTimeout as safety net
-            return configuredTimeout;
-        }
-        return undefined;
-    }
-    getConfiguredBlockingTimeout() {
-        if (typeof this.options.blockingTimeout === "number" &&
-            this.options.blockingTimeout > 0) {
-            return this.options.blockingTimeout;
-        }
-        return undefined;
     }
     setSocketTimeout() {
         this.socketTimeoutTimer = setTimeout(() => {

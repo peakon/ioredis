@@ -163,8 +163,6 @@ declare class Redis extends Commander implements DataHandledable {
      * @ignore
      */
     sendCommand(command: Command, stream?: WriteableStream): unknown;
-    private getBlockingTimeoutInMs;
-    private getConfiguredBlockingTimeout;
     private setSocketTimeout;
     scanStream(options?: ScanStreamOptions): ScanStream;
     scanBufferStream(options?: ScanStreamOptions): ScanStream;

@@ -32,6 +32,7 @@ class ClusterSubscriberGroup {
         // Only latest pending reset kept; throttled by refreshSlotsCache's isRefreshing + backoff delay
         this.isResetting = false;
         this.pendingReset = null;
+        this.lifecycleGeneration = 0;
         /**
          * Handles failed subscriber connections by emitting an event to refresh the slots cache
          * after a backoff period.
@@ -71,14 +72,7 @@ class ClusterSubscriberGroup {
         const nodeKey = this.clusterSlots[slot][0];
         const sub = this.shardedSubscribers.get(nodeKey);
         if (sub && sub.subscriberStatus === "idle") {
-            sub
-                .start()
-                .then(() => {
-                this.handleSubscriberConnectSucceeded(sub.getNodeKey());
-            })
-                .catch((err) => {
-                this.handleSubscriberConnectFailed(err, sub.getNodeKey());
-            });
+            this.startSubscriber(sub);
         }
         return sub;
     }
@@ -127,6 +121,8 @@ class ClusterSubscriberGroup {
      * Disconnect all subscribers and clear some of the internal state.
      */
     stop() {
+        this.lifecycleGeneration += 1;
+        this.isResetting = false;
         for (const s of this.shardedSubscribers.values()) {
             s.stop();
         }
@@ -140,17 +136,11 @@ class ClusterSubscriberGroup {
      * Start all not yet started subscribers
      */
     start() {
+        const generation = this.lifecycleGeneration;
         const startPromises = [];
         for (const s of this.shardedSubscribers.values()) {
             if (this.shouldStartSubscriber(s)) {
-                startPromises.push(s
-                    .start()
-                    .then(() => {
-                    this.handleSubscriberConnectSucceeded(s.getNodeKey());
-                })
-                    .catch((err) => {
-                    this.handleSubscriberConnectFailed(err, s.getNodeKey());
-                }));
+                startPromises.push(this.startSubscriber(s, generation));
                 this.subscriberGroupEmitter.emit("+subscriber");
             }
         }
@@ -165,6 +155,7 @@ class ClusterSubscriberGroup {
             return;
         }
         this.isResetting = true;
+        const generation = this.lifecycleGeneration;
         try {
             const hasTopologyChanged = this._refreshSlots(clusterSlots);
             const hasFailedSubscribers = this.hasUnhealthySubscribers();
@@ -197,14 +188,7 @@ class ClusterSubscriberGroup {
                     debug("Skipping creating new subscriber for %s", nodeKey);
                     if (!existingSubscriber.isStarted() &&
                         this.shouldStartSubscriber(existingSubscriber)) {
-                        startPromises.push(existingSubscriber
-                            .start()
-                            .then(() => {
-                            this.handleSubscriberConnectSucceeded(nodeKey);
-                        })
-                            .catch((error) => {
-                            this.handleSubscriberConnectFailed(error, nodeKey);
-                        }));
+                        startPromises.push(this.startSubscriber(existingSubscriber, generation));
                     }
                     continue;
                 }
@@ -227,14 +211,7 @@ class ClusterSubscriberGroup {
                 const sub = new ShardedSubscriber_1.default(this.subscriberGroupEmitter, redis.options, this.options.redisOptions);
                 this.shardedSubscribers.set(nodeKey, sub);
                 if (this.shouldStartSubscriber(sub)) {
-                    startPromises.push(sub
-                        .start()
-                        .then(() => {
-                        this.handleSubscriberConnectSucceeded(nodeKey);
-                    })
-                        .catch((error) => {
-                        this.handleSubscriberConnectFailed(error, nodeKey);
-                    }));
+                    startPromises.push(this.startSubscriber(sub, generation));
                 }
                 this.subscriberGroupEmitter.emit("+subscriber");
             }
@@ -242,12 +219,17 @@ class ClusterSubscriberGroup {
             // Otherwise we might try to resubscribe to a subscriber that is not yet connected
             // This can cause a race condition
             await Promise.all(startPromises);
+            if (generation !== this.lifecycleGeneration) {
+                return;
+            }
             this._resubscribe();
             this.subscriberGroupEmitter.emit("subscribersReady");
         }
         finally {
-            this.isResetting = false;
-            if (this.pendingReset) {
+            if (generation === this.lifecycleGeneration) {
+                this.isResetting = false;
+            }
+            if (generation === this.lifecycleGeneration && this.pendingReset) {
                 const { slots, nodes } = this.pendingReset;
                 this.pendingReset = null;
                 await this.reset(slots, nodes);
@@ -264,7 +246,8 @@ class ClusterSubscriberGroup {
     _refreshSlots(targetSlots) {
         //If there was an actual change, then reassign the slot ranges
         // Also rebuild if subscriberToSlotsIndex is empty (e.g., after stop() was called)
-        if (this._slotsAreEqual(targetSlots) && this.subscriberToSlotsIndex.size > 0) {
+        if (this._slotsAreEqual(targetSlots) &&
+            this.subscriberToSlotsIndex.size > 0) {
             debug("Nothing to refresh because the new cluster map is equal to the previous one.");
             return false;
         }
@@ -348,6 +331,21 @@ class ClusterSubscriberGroup {
         const hasFailedSubscribers = Array.from(this.shardedSubscribers.values()).some((sub) => !sub.isHealthy());
         const hasMissingSubscribers = Array.from(this.subscriberToSlotsIndex.keys()).some((nodeKey) => !this.shardedSubscribers.has(nodeKey));
         return hasFailedSubscribers || hasMissingSubscribers;
+    }
+    startSubscriber(subscriber, generation = this.lifecycleGeneration) {
+        const nodeKey = subscriber.getNodeKey();
+        return subscriber
+            .start()
+            .then(() => {
+            if (generation === this.lifecycleGeneration) {
+                this.handleSubscriberConnectSucceeded(nodeKey);
+            }
+        })
+            .catch((error) => {
+            if (generation === this.lifecycleGeneration) {
+                this.handleSubscriberConnectFailed(error, nodeKey);
+            }
+        });
     }
     shouldStartSubscriber(sub) {
         if (sub.isStarted()) {

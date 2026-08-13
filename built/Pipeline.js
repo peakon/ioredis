@@ -301,6 +301,24 @@ Pipeline.prototype.exec = function (callback) {
         }
         let data = "";
         let buffers;
+        const completeWrite = () => {
+            if (--writePending) {
+                return;
+            }
+            if (buffers) {
+                if (data) {
+                    buffers.push(Buffer.from(data, "utf8"));
+                }
+                stream.destination.redis.stream.write(Buffer.concat(buffers));
+            }
+            else if (data) {
+                stream.destination.redis.stream.write(data);
+            }
+            // Reset writePending for resending
+            writePending = _this._queue.length;
+            data = "";
+            buffers = undefined;
+        };
         const stream = {
             isPipeline: true,
             destination: _this.isCluster ? node : { redis: _this.redis },
@@ -327,21 +345,10 @@ Pipeline.prototype.exec = function (callback) {
                     }
                     data += writable;
                 }
-                if (!--writePending) {
-                    if (buffers) {
-                        if (data) {
-                            buffers.push(Buffer.from(data, "utf8"));
-                        }
-                        stream.destination.redis.stream.write(Buffer.concat(buffers));
-                    }
-                    else {
-                        stream.destination.redis.stream.write(data);
-                    }
-                    // Reset writePending for resending
-                    writePending = _this._queue.length;
-                    data = "";
-                    buffers = undefined;
-                }
+                completeWrite();
+            },
+            writeSkipped() {
+                completeWrite();
             },
         };
         for (let i = 0; i < _this._queue.length; ++i) {

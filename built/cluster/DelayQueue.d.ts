@@ -16,5 +16,6 @@ export default class DelayQueue {
      * @param options
      */
     push(bucket: string, item: Function, options: DelayQueueOptions): void;
+    flush(): void;
     private execute;
 }

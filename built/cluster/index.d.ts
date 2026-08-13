@@ -40,21 +40,24 @@ declare class Cluster extends Commander {
     private retryAttempts;
     private delayQueue;
     private offlineQueue;
+    private offlineQueueCleanupScheduled;
     private subscriber;
     private shardedSubscribers;
     private slotsTimer;
     private reconnectTimeout;
-    private isRefreshing;
-    private _refreshSlotsCacheCallbacks;
+    private activeRefresh;
+    private activeConnect;
+    private activeTeardown;
+    private queuedConnect;
+    private closedGeneration;
+    private shardedSubscriberRetryTimers;
     private _autoPipelines;
     private _runningAutoPipelines;
     private _readyDelayedCallbacks;
     private subscriberGroupEmitter;
     /**
-     * Every time Cluster#connect() is called, this value will be
-     * auto-incrementing. The purpose of this value is used for
-     * discarding previous connect attampts when creating a new
-     * connection.
+     * Identifies the lifecycle that owns asynchronous cluster work. Starting a
+     * connection or invalidating one during teardown advances the generation.
      */
     private connectionEpoch;
     /**
@@ -62,13 +65,29 @@ declare class Cluster extends Commander {
      */
     constructor(startupNodes: ClusterNode[], options?: ClusterOptions);
     /**
-     * Connect to a cluster
+     * Connect to a cluster.
+     *
+     * Concurrent calls share the active connection attempt. Calling this method
+     * after the cluster is ready rejects with an already-connected error.
      */
     connect(): Promise<void>;
     /**
      * Disconnect from every node in the cluster.
      */
     disconnect(reconnect?: boolean): void;
+    private startConnection;
+    private completeConnection;
+    private failConnection;
+    private settleConnection;
+    private isConnectionOwner;
+    private cancelActiveConnection;
+    private cancelLifecycleWork;
+    private teardown;
+    private beginTeardown;
+    private settleTeardown;
+    private forceReconnect;
+    private handlePoolDrain;
+    private clearShardedSubscriberRetryTimers;
     /**
      * Quit the cluster gracefully.
      */
@@ -105,6 +124,11 @@ declare class Cluster extends Commander {
      * @ignore
      */
     refreshSlotsCache(callback?: Callback<void>): void;
+    private refreshSlotsCacheForGeneration;
+    private isRefreshOwner;
+    private isRefreshAllowed;
+    private settleRefresh;
+    private cancelRefresh;
     /**
      * @ignore
      */
@@ -122,12 +146,15 @@ declare class Cluster extends Commander {
         value?: any;
     }, handlers: any): void;
     private resetOfflineQueue;
+    private scheduleOfflineQueueCleanup;
+    private discardOfflineQueueItem;
     private clearNodesRefreshInterval;
     private resetNodesRefreshInterval;
     /**
      * Change cluster instance's status
      */
     private setStatus;
+    private finishClose;
     /**
      * Called when closed to check whether a reconnection should be made
      */
