@@ -207,6 +207,7 @@ export default class Command implements Respondable {
   pipelineIndex?: number;
   isTraced = false;
 
+  // True only after fulfillment; rejection deliberately leaves this false.
   isResolved = false;
   reject: (err: Error) => void;
   resolve: (result: any) => void;
@@ -475,6 +476,7 @@ export default class Command implements Respondable {
   }
 
   private initPromise() {
+    this.isResolved = false;
     const promise = new Promise((resolve, reject) => {
       if (!this.transformed) {
         this.transformed = true;

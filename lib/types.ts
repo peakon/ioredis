@@ -15,6 +15,7 @@ export interface Respondable {
 export interface PipelineWriteableStream {
   isPipeline: true;
   write(data: string | Buffer): unknown;
+  writeSkipped?(): unknown;
   destination: { redis: { stream: NetStream } };
 }
 

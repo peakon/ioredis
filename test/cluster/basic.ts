@@ -161,45 +161,52 @@ describe("cluster", () => {
     });
   });
 
-
   describe("Test if the client performs the hash-based sharding for simple set operations", () => {
     it("Works when you don't get MOVED error responses", async () => {
-
       // Verify that the cluster is configured with 3 master nodes
-      const cluster : Cluster = new Cluster([{ host: "127.0.0.1", port: masters[0] }]);
+      const cluster: Cluster = new Cluster([
+        { host: "127.0.0.1", port: masters[0] },
+      ]);
       cluster.on("ready", () => {
         expect(cluster.nodes("master").length).to.eql(3);
       });
 
-      const keys = ["channel:test:3", "channel:test:2",  "channel:test:0"]
+      const keys = ["channel:test:3", "channel:test:2", "channel:test:0"];
       for (const k of keys) {
         let status: string = await cluster.set(k, "Test status per node");
         expect(status).to.eql("OK");
         let value: string = await cluster.get(k);
         expect(value).to.eql("Test status per node");
       }
-    })
-  });
-
-  describe("disconnect and connect again", () => {
-    it("works 20 times in a row", async () => {
-      const cluster = new Cluster([{ host: "127.0.0.1", port: masters[0] }]);
-
-      for (let i = 1; i <= 20; i++) {
-        await cluster.set("foo", `bar${i}`);
-
-        const endPromise = new Promise((resolve) =>
-          cluster.once("end", resolve)
-        );
-        await cluster.quit();
-        cluster.disconnect();
-        await endPromise;
-
-        cluster.connect();
-        expect(await cluster.get("foo")).to.equal(`bar${i}`);
-        await cluster.del("foo");
-      }
     });
   });
 
+  describe("disconnect and connect again", () => {
+    it("works 100 times in a row with immediate reconnects", async function () {
+      this.timeout(30_000);
+      const cluster = new Cluster([{ host: "127.0.0.1", port: masters[0] }]);
+      const errors: Error[] = [];
+      cluster.on("error", (error) => errors.push(error));
+
+      try {
+        await cluster.set("foo", "bar");
+        for (let i = 0; i < 100; i++) {
+          const endPromise = new Promise<void>((resolve) =>
+            cluster.once("end", resolve)
+          );
+          cluster.disconnect();
+          const connectPromise = cluster.connect();
+          await Promise.all([endPromise, connectPromise]);
+          expect(await cluster.get("foo")).to.equal("bar");
+        }
+        const errorMessages = errors.map((error) => error.message);
+        expect(errorMessages).not.to.include("Connection is aborted");
+        expect(errorMessages).not.to.include(
+          "None of startup nodes is available"
+        );
+      } finally {
+        cluster.disconnect();
+      }
+    });
+  });
 });

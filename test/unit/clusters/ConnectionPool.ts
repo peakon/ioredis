@@ -108,6 +108,20 @@ describe("ConnectionPool", () => {
       expect(nodeError.callCount).to.eql(0);
     });
 
+    it("tags drain with the generation that owns the emptied pool", () => {
+      const pool = new ConnectionPool({});
+      pool.reset([{ host: "127.0.0.1", port: 30001 }], 1);
+      const redis = pool.getNodes()[0];
+      const drain = sinon.spy();
+      pool.on("drain", drain);
+
+      // Model a record that survived into a newer pool generation.
+      pool["generation"] = 2;
+      redis.emit("end");
+
+      expect(drain.calledOnceWithExactly(2)).to.equal(true);
+    });
+
     it("does not throw when a -node listener resets the pool", () => {
       const pool = new ConnectionPool({});
       pool.reset([

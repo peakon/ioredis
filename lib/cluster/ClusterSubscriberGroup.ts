@@ -26,6 +26,7 @@ export default class ClusterSubscriberGroup {
   // Only latest pending reset kept; throttled by refreshSlotsCache's isRefreshing + backoff delay
   private isResetting = false;
   private pendingReset: { slots: string[][]; nodes: any[] } | null = null;
+  private lifecycleGeneration = 0;
 
   // Retry strategy
   private static readonly MAX_RETRY_ATTEMPTS = 10;
@@ -39,7 +40,7 @@ export default class ClusterSubscriberGroup {
    */
   constructor(
     private readonly subscriberGroupEmitter: EventEmitter,
-    private readonly options: ClusterOptions,
+    private readonly options: ClusterOptions
   ) {}
 
   /**
@@ -52,14 +53,7 @@ export default class ClusterSubscriberGroup {
     const sub = this.shardedSubscribers.get(nodeKey);
 
     if (sub && sub.subscriberStatus === "idle") {
-      sub
-        .start()
-        .then(() => {
-          this.handleSubscriberConnectSucceeded(sub.getNodeKey());
-        })
-        .catch((err) => {
-          this.handleSubscriberConnectFailed(err, sub.getNodeKey());
-        });
+      this.startSubscriber(sub);
     }
 
     return sub;
@@ -90,7 +84,7 @@ export default class ClusterSubscriberGroup {
 
     return Array.from(this.channels.values()).reduce(
       (sum, array) => sum + array.length,
-      0,
+      0
     );
   }
 
@@ -117,7 +111,7 @@ export default class ClusterSubscriberGroup {
 
     return Array.from(this.channels.values()).reduce(
       (sum, array) => sum + array.length,
-      0,
+      0
     );
   }
 
@@ -125,6 +119,8 @@ export default class ClusterSubscriberGroup {
    * Disconnect all subscribers and clear some of the internal state.
    */
   stop() {
+    this.lifecycleGeneration += 1;
+    this.isResetting = false;
     for (const s of this.shardedSubscribers.values()) {
       s.stop();
     }
@@ -140,19 +136,11 @@ export default class ClusterSubscriberGroup {
    * Start all not yet started subscribers
    */
   start() {
+    const generation = this.lifecycleGeneration;
     const startPromises = [];
     for (const s of this.shardedSubscribers.values()) {
       if (this.shouldStartSubscriber(s)) {
-        startPromises.push(
-          s
-            .start()
-            .then(() => {
-              this.handleSubscriberConnectSucceeded(s.getNodeKey());
-            })
-            .catch((err) => {
-              this.handleSubscriberConnectFailed(err, s.getNodeKey());
-            }),
-        );
+        startPromises.push(this.startSubscriber(s, generation));
 
         this.subscriberGroupEmitter.emit("+subscriber");
       }
@@ -170,6 +158,7 @@ export default class ClusterSubscriberGroup {
     }
 
     this.isResetting = true;
+    const generation = this.lifecycleGeneration;
 
     try {
       const hasTopologyChanged = this._refreshSlots(clusterSlots);
@@ -177,7 +166,7 @@ export default class ClusterSubscriberGroup {
 
       if (!hasTopologyChanged && !hasFailedSubscribers) {
         debug(
-          "No topology change detected or failed subscribers. Skipping reset.",
+          "No topology change detected or failed subscribers. Skipping reset."
         );
         return;
       }
@@ -216,14 +205,7 @@ export default class ClusterSubscriberGroup {
             this.shouldStartSubscriber(existingSubscriber)
           ) {
             startPromises.push(
-              existingSubscriber
-                .start()
-                .then(() => {
-                  this.handleSubscriberConnectSucceeded(nodeKey);
-                })
-                .catch((error) => {
-                  this.handleSubscriberConnectFailed(error, nodeKey);
-                }),
+              this.startSubscriber(existingSubscriber, generation)
             );
           }
 
@@ -252,22 +234,13 @@ export default class ClusterSubscriberGroup {
         const sub = new ShardedSubscriber(
           this.subscriberGroupEmitter,
           redis.options,
-          this.options.redisOptions,
+          this.options.redisOptions
         );
 
         this.shardedSubscribers.set(nodeKey, sub);
 
         if (this.shouldStartSubscriber(sub)) {
-          startPromises.push(
-            sub
-              .start()
-              .then(() => {
-                this.handleSubscriberConnectSucceeded(nodeKey);
-              })
-              .catch((error) => {
-                this.handleSubscriberConnectFailed(error, nodeKey);
-              }),
-          );
+          startPromises.push(this.startSubscriber(sub, generation));
         }
 
         this.subscriberGroupEmitter.emit("+subscriber");
@@ -277,12 +250,17 @@ export default class ClusterSubscriberGroup {
       // Otherwise we might try to resubscribe to a subscriber that is not yet connected
       // This can cause a race condition
       await Promise.all(startPromises);
+      if (generation !== this.lifecycleGeneration) {
+        return;
+      }
 
       this._resubscribe();
       this.subscriberGroupEmitter.emit("subscribersReady");
     } finally {
-      this.isResetting = false;
-      if (this.pendingReset) {
+      if (generation === this.lifecycleGeneration) {
+        this.isResetting = false;
+      }
+      if (generation === this.lifecycleGeneration && this.pendingReset) {
         const { slots, nodes } = this.pendingReset;
         this.pendingReset = null;
         await this.reset(slots, nodes);
@@ -300,9 +278,12 @@ export default class ClusterSubscriberGroup {
   private _refreshSlots(targetSlots: string[][]): boolean {
     //If there was an actual change, then reassign the slot ranges
     // Also rebuild if subscriberToSlotsIndex is empty (e.g., after stop() was called)
-    if (this._slotsAreEqual(targetSlots) && this.subscriberToSlotsIndex.size > 0) {
+    if (
+      this._slotsAreEqual(targetSlots) &&
+      this.subscriberToSlotsIndex.size > 0
+    ) {
       debug(
-        "Nothing to refresh because the new cluster map is equal to the previous one.",
+        "Nothing to refresh because the new cluster map is equal to the previous one."
       );
 
       return false;
@@ -362,7 +343,7 @@ export default class ClusterSubscriberGroup {
                       debug(
                         "Failed to ssubscribe on node %s: %s",
                         nodeKey,
-                        err,
+                        err
                       );
                     });
                   });
@@ -370,7 +351,7 @@ export default class ClusterSubscriberGroup {
               }
             });
           }
-        },
+        }
       );
     }
   }
@@ -400,14 +381,33 @@ export default class ClusterSubscriberGroup {
    */
   private hasUnhealthySubscribers(): boolean {
     const hasFailedSubscribers = Array.from(
-      this.shardedSubscribers.values(),
+      this.shardedSubscribers.values()
     ).some((sub) => !sub.isHealthy());
 
     const hasMissingSubscribers = Array.from(
-      this.subscriberToSlotsIndex.keys(),
+      this.subscriberToSlotsIndex.keys()
     ).some((nodeKey) => !this.shardedSubscribers.has(nodeKey));
 
     return hasFailedSubscribers || hasMissingSubscribers;
+  }
+
+  private startSubscriber(
+    subscriber: ShardedSubscriber,
+    generation = this.lifecycleGeneration
+  ): Promise<void> {
+    const nodeKey = subscriber.getNodeKey();
+    return subscriber
+      .start()
+      .then(() => {
+        if (generation === this.lifecycleGeneration) {
+          this.handleSubscriberConnectSucceeded(nodeKey);
+        }
+      })
+      .catch((error) => {
+        if (generation === this.lifecycleGeneration) {
+          this.handleSubscriberConnectFailed(error, nodeKey);
+        }
+      });
   }
 
   /**
@@ -424,11 +424,11 @@ export default class ClusterSubscriberGroup {
 
     const attempts = Math.min(
       failedAttempts,
-      ClusterSubscriberGroup.MAX_RETRY_ATTEMPTS,
+      ClusterSubscriberGroup.MAX_RETRY_ATTEMPTS
     );
     const backoff = Math.min(
       ClusterSubscriberGroup.BASE_BACKOFF_MS * 2 ** attempts,
-      ClusterSubscriberGroup.MAX_BACKOFF_MS,
+      ClusterSubscriberGroup.MAX_BACKOFF_MS
     );
     const jitter = Math.floor((Math.random() - 0.5) * (backoff * 0.5));
     const delay = Math.max(0, backoff + jitter);
@@ -436,7 +436,7 @@ export default class ClusterSubscriberGroup {
     debug(
       "Failed to connect subscriber for %s. Refreshing slots in %dms",
       nodeKey,
-      delay,
+      delay
     );
 
     this.subscriberGroupEmitter.emit("subscriberConnectFailed", {

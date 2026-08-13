@@ -14,12 +14,12 @@ export default class ClusterSubscriber {
   private lastActiveSubscriber: any;
 
   //The slot range for which this subscriber is responsible
-  private slotRange: number[] = []
+  private slotRange: number[] = [];
 
   constructor(
     private connectionPool: ConnectionPool,
     private emitter: EventEmitter,
-    private isSharded : boolean = false
+    private isSharded: boolean = false
   ) {
     // If the current node we're using as the subscriber disappears
     // from the node pool for some reason, we will select a new one
@@ -78,6 +78,7 @@ export default class ClusterSubscriber {
   stop(): void {
     this.started = false;
     if (this.subscriber) {
+      this.subscriber.off("end", this.onSubscriberEnd);
       this.subscriber.disconnect();
       this.subscriber = null;
     }
@@ -86,7 +87,6 @@ export default class ClusterSubscriber {
   isStarted(): boolean {
     return this.started;
   }
-
 
   private onSubscriberEnd = () => {
     if (!this.started) {
@@ -139,8 +139,7 @@ export default class ClusterSubscriber {
      * will be disconnected and a new subscriber will be selected.
      */
     let connectionPrefix = "subscriber";
-    if (this.isSharded)
-      connectionPrefix = "ssubscriber";
+    if (this.isSharded) connectionPrefix = "ssubscriber";
 
     this.subscriber = new Redis({
       port: options.port,
@@ -148,7 +147,10 @@ export default class ClusterSubscriber {
       username: options.username,
       password: options.password,
       enableReadyCheck: true,
-      connectionName: getConnectionName(connectionPrefix, options.connectionName),
+      connectionName: getConnectionName(
+        connectionPrefix,
+        options.connectionName
+      ),
       lazyConnect: true,
       tls: options.tls,
       // Don't try to reconnect the subscriber connection. If the connection fails
@@ -229,10 +231,7 @@ export default class ClusterSubscriber {
     } else {
       this.lastActiveSubscriber = this.subscriber;
     }
-    for (const event of [
-      "message",
-      "messageBuffer",
-    ]) {
+    for (const event of ["message", "messageBuffer"]) {
       this.subscriber.on(event, (arg1, arg2) => {
         this.emitter.emit(event, arg1, arg2);
       });
@@ -245,10 +244,7 @@ export default class ClusterSubscriber {
     }
 
     if (this.isSharded == true) {
-      for (const event of [
-        "smessage",
-        "smessageBuffer",
-      ]) {
+      for (const event of ["smessage", "smessageBuffer"]) {
         this.subscriber.on(event, (arg1, arg2) => {
           this.emitter.emit(event, arg1, arg2);
         });

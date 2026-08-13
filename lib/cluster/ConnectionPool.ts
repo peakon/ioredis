@@ -23,10 +23,11 @@ export default class ConnectionPool extends EventEmitter {
   };
 
   private specifiedOptions: { [key: string]: any } = {};
+  private generation?: number;
 
   constructor(
     private redisOptions: NonNullable<ClusterOptions["redisOptions"]>,
-    private clusterNodeRetryStrategy: ClusterNodeRetryStrategy = null,
+    private clusterNodeRetryStrategy: ClusterNodeRetryStrategy = null
   ) {
     super();
   }
@@ -54,7 +55,7 @@ export default class ConnectionPool extends EventEmitter {
     const key = getNodeKey(node.options);
     const redis: Redis = this.createRedisFromOptions(
       node,
-      node.options.readOnly,
+      node.options.readOnly
     );
 
     //Master nodes aren't read-only
@@ -96,8 +97,8 @@ export default class ConnectionPool extends EventEmitter {
         },
         node,
         this.redisOptions,
-        { lazyConnect: true },
-      ),
+        { lazyConnect: true }
+      )
     );
 
     return redis;
@@ -139,10 +140,9 @@ export default class ConnectionPool extends EventEmitter {
       this.nodeRecords[readOnly ? "slave" : "master"][key] = nodeRecord;
 
       redis.once("end", nodeRecord.endListener);
+      redis.on("error", nodeRecord.errorListener);
 
       this.emit("+node", redis, key);
-
-      redis.on("error", nodeRecord.errorListener);
     }
 
     return nodeRecord.redis;
@@ -152,8 +152,11 @@ export default class ConnectionPool extends EventEmitter {
    * Reset the pool with a set of nodes.
    * The old node will be removed.
    */
-  reset(nodes: RedisOptions[]): void {
+  reset(nodes: RedisOptions[], generation?: number): void {
     debug("Reset with %O", nodes);
+    if (generation !== undefined) {
+      this.generation = generation;
+    }
     const newNodes = {};
     nodes.forEach((node) => {
       const key = getNodeKey(node);
@@ -165,41 +168,54 @@ export default class ConnectionPool extends EventEmitter {
       }
     });
 
-    Object.keys(newNodes).forEach((key) => {
+    for (const key of Object.keys(newNodes)) {
+      if (generation !== undefined && generation !== this.generation) {
+        return;
+      }
       const node = newNodes[key];
       this.findOrCreate(node, node.readOnly);
-    });
-    Object.keys(this.nodeRecords.all).forEach((key) => {
+      if (generation !== undefined && generation !== this.generation) {
+        return;
+      }
+    }
+    for (const key of Object.keys(this.nodeRecords.all)) {
+      if (generation !== undefined && generation !== this.generation) {
+        return;
+      }
       const nodeRecord = this.nodeRecords.all[key];
       if (!newNodes[key] && nodeRecord) {
         debug("Disconnect %s because the node does not hold any slot", key);
         nodeRecord.redis.disconnect();
         if (this.nodeRecords.all[key] === nodeRecord) {
-          this.removeNode(key);
+          this.removeNode(key, nodeRecord);
+          if (generation !== undefined && generation !== this.generation) {
+            return;
+          }
         }
       }
-    });
+    }
   }
 
   private createNodeRecord(redis: Redis, key: NodeKey): NodeRecord {
-    return {
+    const nodeRecord: NodeRecord = {
       redis,
       endListener: () => {
-        this.removeNode(key);
+        this.removeNode(key, nodeRecord);
       },
       errorListener: (error: unknown) => {
         this.emit("nodeError", error, key);
       },
     };
+    return nodeRecord;
   }
 
   /**
    * Remove a node from the pool.
    */
-  private removeNode(key: string): void {
+  private removeNode(key: string, expectedRecord?: NodeRecord): void {
     const { nodeRecords } = this;
     const nodeRecord = nodeRecords.all[key];
-    if (nodeRecord) {
+    if (nodeRecord && (!expectedRecord || nodeRecord === expectedRecord)) {
       debug("Remove %s from the pool", key);
       nodeRecord.redis.removeListener("end", nodeRecord.endListener);
       nodeRecord.redis.removeListener("error", nodeRecord.errorListener);
@@ -210,7 +226,7 @@ export default class ConnectionPool extends EventEmitter {
       const shouldEmitDrain = !Object.keys(nodeRecords.all).length;
       this.emit("-node", nodeRecord.redis, key);
       if (shouldEmitDrain && !Object.keys(nodeRecords.all).length) {
-        this.emit("drain");
+        this.emit("drain", this.generation);
       }
     }
   }

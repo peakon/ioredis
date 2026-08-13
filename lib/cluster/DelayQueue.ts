@@ -41,6 +41,23 @@ export default class DelayQueue {
     }
   }
 
+  flush(): void {
+    for (const bucket of Object.keys(this.timeouts)) {
+      if (this.timeouts[bucket]) {
+        clearTimeout(this.timeouts[bucket]);
+      }
+    }
+    this.timeouts = {};
+    const queues = this.queues;
+    this.queues = {};
+    for (const bucket of Object.keys(queues)) {
+      const queue = queues[bucket];
+      while (queue?.length > 0) {
+        queue.shift()();
+      }
+    }
+  }
+
   private execute(bucket: string): void {
     const queue = this.queues[bucket];
     if (!queue) {

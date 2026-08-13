@@ -7,6 +7,9 @@ import { DataHandledable, FlushQueueOptions, Condition } from "./DataHandler";
 import { StandaloneConnector } from "./connectors";
 import AbstractConnector from "./connectors/AbstractConnector";
 import SentinelConnector from "./connectors/SentinelConnector";
+import getBlockingTimeoutInMs, {
+  getConfiguredBlockingTimeout,
+} from "./redis/blockingTimeout";
 import * as eventHandler from "./redis/event_handler";
 import {
   DEFAULT_REDIS_OPTIONS,
@@ -466,7 +469,7 @@ class Redis extends Commander implements DataHandledable {
       command.setTimeout(this.options.commandTimeout);
     }
 
-    const blockingTimeout = this.getBlockingTimeoutInMs(command);
+    const blockingTimeout = getBlockingTimeoutInMs(command, this.options);
 
     let writable =
       this.status === "ready" ||
@@ -523,7 +526,7 @@ class Redis extends Commander implements DataHandledable {
       // only when blockingTimeout is configured. Without this option, queued
       // blocking commands may wait indefinitely on a dead connection.
       if (Command.checkFlag("BLOCKING_COMMANDS", command.name)) {
-        const offlineTimeout = this.getConfiguredBlockingTimeout();
+        const offlineTimeout = getConfiguredBlockingTimeout(this.options);
         if (offlineTimeout !== undefined) {
           command.setBlockingTimeout(offlineTimeout);
         }
@@ -594,50 +597,6 @@ class Redis extends Commander implements DataHandledable {
       () => command.promise as Promise<unknown>,
       () => this._buildCommandContext(command)
     );
-  }
-
-  private getBlockingTimeoutInMs(command: Command): number | undefined {
-    if (!Command.checkFlag("BLOCKING_COMMANDS", command.name)) {
-      return undefined;
-    }
-
-    // Feature is opt-in: only enabled when blockingTimeout is set to a positive number
-    const configuredTimeout = this.getConfiguredBlockingTimeout();
-    if (configuredTimeout === undefined) {
-      return undefined;
-    }
-
-    const timeout = command.extractBlockingTimeout();
-    if (typeof timeout === "number") {
-      if (timeout > 0) {
-        // Finite timeout from command args - add grace period
-        return (
-          timeout +
-          (this.options.blockingTimeoutGrace ??
-            DEFAULT_REDIS_OPTIONS.blockingTimeoutGrace)
-        );
-      }
-      // Command has timeout=0 (block forever), use blockingTimeout option as safety net
-      return configuredTimeout;
-    }
-
-    if (timeout === null) {
-      // No BLOCK option found (e.g., XREAD without BLOCK), use blockingTimeout as safety net
-      return configuredTimeout;
-    }
-
-    return undefined;
-  }
-
-  private getConfiguredBlockingTimeout(): number | undefined {
-    if (
-      typeof this.options.blockingTimeout === "number" &&
-      this.options.blockingTimeout > 0
-    ) {
-      return this.options.blockingTimeout;
-    }
-
-    return undefined;
   }
 
   private setSocketTimeout() {
